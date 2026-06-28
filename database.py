@@ -1,9 +1,12 @@
 import aiosqlite
+import os
 from datetime import datetime, timedelta
 from config import DB_PATH
 
 
 async def init_db():
+    # Create data directory if not exists
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
             CREATE TABLE IF NOT EXISTS users (
