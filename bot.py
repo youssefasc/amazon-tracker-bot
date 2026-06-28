@@ -91,7 +91,15 @@ async def receive_link(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not product:
         await msg.edit_text(
             "❌ مقدرتش أقرأ المنتج ده.\n\n"
-            "جرب:\n• تأكد إن الرابط من أمازون مصر\n• ابعت رابط ثاني"
+            "📌 <b>المطلوب:</b> رابط من <b>amazon.eg</b> مباشرة\n\n"
+            "✅ <b>ازاي تجيب الرابط الصح؟</b>\n"
+            "1️⃣ افتح المنتج على أمازون مصر\n"
+            "2️⃣ انسخ الرابط من شريط العنوان\n"
+            "3️⃣ المفروض يبدأ بـ <code>amazon.eg</code>\n\n"
+            "❌ <b>مش بيشتغل:</b>\n"
+            "• روابط <code>link.amazon.com</code>\n"
+            "• روابط <code>amzn.eu</code>\n"
+            "• روابط مشاركة من تطبيق أمازون"
         )
         return WAITING_LINK
 
