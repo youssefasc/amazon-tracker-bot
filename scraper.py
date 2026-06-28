@@ -29,8 +29,8 @@ REDIRECT_DOMAINS = ["amzn.to", "amzn.eu", "link.amazon.com", "link.amazon/", "am
 AMAZON_PRODUCT_DOMAINS = ["amazon.eg", "amazon.com", "amazon.co.uk", "amazon.de", "amazon.fr"]
 
 
-async def bypass_bot_check(page):
-    """Click continue button if Amazon shows bot check page"""
+async def bypass_bot_check(page) -> bool:
+    """Click continue button if Amazon shows bot check, then wait for product page"""
     try:
         for selector in [
             "input[type='submit']",
@@ -40,11 +40,18 @@ async def bypass_bot_check(page):
         ]:
             el = await page.query_selector(selector)
             if el:
+                print(f"Bot check detected — clicking {selector}")
                 await el.click()
-                await asyncio.sleep(3)
-                return
+                # Wait for navigation after click
+                for _ in range(10):
+                    await asyncio.sleep(1)
+                    if "/dp/" in page.url or "/gp/" in page.url:
+                        print(f"After bypass: {page.url[:60]}")
+                        return True
+                return True
     except:
         pass
+    return False
 
 
 async def new_browser_context(p):
@@ -72,6 +79,9 @@ async def scrape_amazon_product(url: str) -> dict | None:
             resp = await page.goto(url, wait_until="domcontentloaded", timeout=25000)
             print(f"HTTP: {resp.status if resp else 'None'}, URL: {page.url[:60]}")
 
+            # Save ASIN from initial URL if present (before any bypass)
+            initial_asin = extract_asin(page.url)
+
             # Handle bot check
             await bypass_bot_check(page)
 
@@ -88,12 +98,19 @@ async def scrape_amazon_product(url: str) -> dict | None:
 
             print(f"Final URL: {page.url[:80]}")
 
-            # Extract ASIN
-            asin = extract_asin(page.url)
+            # Extract ASIN — prefer from final URL, fallback to initial
+            asin = extract_asin(page.url) or initial_asin
             if not asin:
                 print(f"No ASIN found in: {page.url}")
                 await browser.close()
                 return None
+
+            # If not on product page, navigate directly using ASIN
+            if "/dp/" not in page.url:
+                product_url = f"https://www.amazon.eg/dp/{asin}"
+                print(f"Navigating directly to: {product_url}")
+                await page.goto(product_url, wait_until="domcontentloaded", timeout=30000)
+                await bypass_bot_check(page)
 
             # Wait for product title
             try:
