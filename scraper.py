@@ -19,9 +19,9 @@ def extract_asin(url: str) -> str | None:
     for p in patterns:
         m = re.search(p, url)
         if m:
-            candidate = m.group(1)
-            if candidate.startswith("B") or candidate.isdigit():
-                return candidate
+            c = m.group(1)
+            if c.startswith("B") or c.isdigit():
+                return c
     return None
 
 
@@ -38,27 +38,22 @@ async def _open_and_read(url: str) -> dict | None:
         try:
             resp = await page.goto(url, wait_until="domcontentloaded", timeout=25000)
             print(f"HTTP: {resp.status if resp else 'None'}, URL: {page.url[:60]}")
-
-            # Handle bot check first (same as debug)
+            # Bot check
             try:
                 btn = await page.query_selector("input[type='submit'], button[type='submit'], .a-button-input")
                 if btn:
-                    print("Clicking bot check button")
                     await btn.click()
                     await asyncio.sleep(3)
             except:
                 pass
-
-            # Wait for redirect (same as debug)
+            # Wait for redirect
             for _ in range(10):
                 await asyncio.sleep(1)
                 if "amazon.eg" in page.url and "/dp/" in page.url:
                     break
-
             print(f"Final URL: {page.url[:70]}")
             asin = extract_asin(page.url)
-
-            # Read title (same as debug — wait_for_selector per selector)
+            # Title
             title = None
             for sel in ["#productTitle", "span#productTitle"]:
                 try:
@@ -71,17 +66,11 @@ async def _open_and_read(url: str) -> dict | None:
                             break
                 except:
                     pass
-
-            # Read price (same as debug)
+            # Price
             price = None
-            for sel in [
-                "span.priceToPay span.a-price-whole",
-                ".apexPriceToPay span.a-price-whole",
-                "span.a-price-whole",
-                "#corePrice_feature_div span.a-price-whole",
-                "#priceblock_ourprice",
-                ".a-price .a-offscreen",
-            ]:
+            for sel in ["span.priceToPay span.a-price-whole", ".apexPriceToPay span.a-price-whole",
+                        "span.a-price-whole", "#corePrice_feature_div span.a-price-whole",
+                        "#priceblock_ourprice", ".a-price .a-offscreen"]:
                 try:
                     el = await page.query_selector(sel)
                     if el:
@@ -92,8 +81,7 @@ async def _open_and_read(url: str) -> dict | None:
                             break
                 except:
                     pass
-
-            # Read image
+            # Image
             image_url = ""
             for sel in ["#landingImage", "#imgBlkFront"]:
                 try:
@@ -105,9 +93,36 @@ async def _open_and_read(url: str) -> dict | None:
                             break
                 except:
                     pass
-
-            print(f"Result — asin: {asin}, title: {bool(title)}, price: {price}")
-            return {"asin": asin, "title": title, "price": price, "image_url": image_url}
+            # Original price (before discount)
+            original_price = None
+            for sel in ["span.a-price.a-text-price span.a-offscreen", ".basisPrice span.a-offscreen"]:
+                try:
+                    el = await page.query_selector(sel)
+                    if el:
+                        raw = (await el.inner_text()).strip()
+                        cleaned = re.sub(r"[^\d.]", "", raw.replace(",", ""))
+                        if cleaned:
+                            original_price = float(cleaned)
+                            break
+                except:
+                    pass
+            # Discount percent
+            discount_pct = None
+            try:
+                el = await page.query_selector(".savingsPercentage, .a-color-price")
+                if el:
+                    txt = (await el.inner_text()).strip()
+                    m = re.search(r"(\d+)%", txt)
+                    if m:
+                        discount_pct = int(m.group(1))
+            except:
+                pass
+            print(f"Result — asin:{asin}, title:{bool(title)}, price:{price}")
+            return {
+                "asin": asin, "title": title, "price": price,
+                "image_url": image_url, "original_price": original_price,
+                "discount_pct": discount_pct
+            }
         finally:
             await browser.close()
 
@@ -159,7 +174,6 @@ async def search_amazon(query: str) -> list[dict]:
             except:
                 pass
             await asyncio.sleep(2)
-
             results = []
             items = await page.query_selector_all("[data-component-type='s-search-result']")
             for item in items[:5]:
@@ -173,7 +187,6 @@ async def search_amazon(query: str) -> list[dict]:
                     price_raw = (await price_el.inner_text()).strip() if price_el else ""
                     price_clean = re.sub(r"[^\d.]", "", price_raw.replace(",", ""))
                     price = float(price_clean) if price_clean else None
-                    # Image
                     image_url = ""
                     for img_sel in ["img.s-image", ".s-product-image-container img"]:
                         try:
@@ -184,13 +197,12 @@ async def search_amazon(query: str) -> list[dict]:
                                     break
                         except:
                             pass
-                    # Rating
                     rating = ""
                     try:
                         rating_el = await item.query_selector("span.a-icon-alt")
                         if rating_el:
-                            rating_text = (await rating_el.inner_text()).strip()
-                            rating = rating_text.split(" ")[0] if rating_text else ""
+                            txt = (await rating_el.inner_text()).strip()
+                            rating = txt.split(" ")[0] if txt else ""
                     except:
                         pass
                     if title and price:
@@ -198,8 +210,7 @@ async def search_amazon(query: str) -> list[dict]:
                             "asin": asin, "title": title[:150], "price": price,
                             "url": f"https://www.amazon.eg/dp/{asin}",
                             "affiliate_url": make_affiliate_url(asin),
-                            "image_url": image_url,
-                            "rating": rating,
+                            "image_url": image_url, "rating": rating,
                         })
                 except:
                     continue
@@ -207,4 +218,80 @@ async def search_amazon(query: str) -> list[dict]:
             return results
     except Exception as e:
         print(f"Search error: {e}")
+        return []
+
+
+async def get_deals_from_amazon() -> list[dict]:
+    """Scrape Amazon Egypt deals page for discounted products"""
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                locale="ar-EG",
+            )
+            page = await context.new_page()
+            await page.goto("https://www.amazon.eg/deals", wait_until="domcontentloaded", timeout=30000)
+            try:
+                btn = await page.query_selector("input[type='submit'], .a-button-input")
+                if btn:
+                    await btn.click()
+                    await asyncio.sleep(3)
+            except:
+                pass
+            await asyncio.sleep(3)
+            deals = []
+            items = await page.query_selector_all("[data-testid='deal-card'], .a-section.octopus-dlp-asin-section")
+            if not items:
+                items = await page.query_selector_all("[data-component-type='s-search-result']")
+            for item in items[:8]:
+                try:
+                    asin = await item.get_attribute("data-asin") or ""
+                    if not asin:
+                        link = await item.query_selector("a[href*='/dp/']")
+                        if link:
+                            href = await link.get_attribute("href") or ""
+                            asin = extract_asin(href) or ""
+                    if not asin:
+                        continue
+                    title_el = await item.query_selector("h2 span, .a-text-normal, [data-testid='product-title']")
+                    title = (await title_el.inner_text()).strip() if title_el else ""
+                    if not title:
+                        continue
+                    price_el = await item.query_selector("span.a-price-whole, .a-price .a-offscreen")
+                    price_raw = (await price_el.inner_text()).strip() if price_el else ""
+                    price_clean = re.sub(r"[^\d.]", "", price_raw.replace(",", ""))
+                    price = float(price_clean) if price_clean else None
+                    if not price:
+                        continue
+                    orig_el = await item.query_selector("span.a-price.a-text-price .a-offscreen, .a-text-strike")
+                    orig_raw = (await orig_el.inner_text()).strip() if orig_el else ""
+                    orig_clean = re.sub(r"[^\d.]", "", orig_raw.replace(",", ""))
+                    original_price = float(orig_clean) if orig_clean else None
+                    discount_pct = None
+                    if original_price and original_price > price:
+                        discount_pct = int((original_price - price) / original_price * 100)
+                    else:
+                        pct_el = await item.query_selector(".a-badge-text, .savingsPercentage")
+                        if pct_el:
+                            txt = (await pct_el.inner_text()).strip()
+                            m = re.search(r"(\d+)", txt)
+                            if m:
+                                discount_pct = int(m.group(1))
+                    if not discount_pct or discount_pct < 10:
+                        continue
+                    img_el = await item.query_selector("img")
+                    image_url = await img_el.get_attribute("src") or "" if img_el else ""
+                    deals.append({
+                        "asin": asin, "title": title[:200], "price": price,
+                        "original_price": original_price, "discount_pct": discount_pct,
+                        "image_url": image_url,
+                        "affiliate_url": make_affiliate_url(asin),
+                    })
+                except:
+                    continue
+            await browser.close()
+            return deals
+    except Exception as e:
+        print(f"Deals error: {e}")
         return []
