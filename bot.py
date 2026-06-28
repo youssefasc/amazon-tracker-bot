@@ -166,8 +166,11 @@ async def receive_link(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("❌ اللينك ده مش من أمازون، جرب تاني.")
         return WAITING_LINK
     msg = await update.effective_message.reply_text("⏳ بقرأ المنتج، استنى...")
-    product = await scrape_amazon_product(url)
-    if not product:
+
+product = await scrape_amazon_product(url)
+print(product)
+
+if not product:
         await msg.edit_text(
             "❌ مقدرتش أقرأ المنتج ده.\n\n"
             "📌 ابعتلي رابط من <b>amazon.eg</b> مباشرة\n"
