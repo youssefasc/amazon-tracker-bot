@@ -22,21 +22,36 @@ def extract_asin(url: str) -> str | None:
     return None
 
 
+REDIRECT_DOMAINS = ["amzn.to", "amzn.eu", "link.amazon.com", "amzn.com", "a.co"]
+
+
 async def resolve_short_url(url: str) -> str:
-    """Resolve amzn.to short links"""
-    if "amzn.to" in url or "amzn.eu" in url:
+    """Resolve any amazon short/redirect link to final URL"""
+    needs_resolve = any(d in url for d in REDIRECT_DOMAINS)
+    if not needs_resolve:
+        return url
+    try:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-setuid-sandbox"]
+            )
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            )
+            page = await context.new_page()
             try:
-                response = await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                await asyncio.sleep(1)
                 resolved = page.url
                 await browser.close()
+                print(f"Resolved {url} → {resolved}")
                 return resolved
             except:
                 await browser.close()
                 return url
-    return url
+    except:
+        return url
 
 
 async def scrape_amazon_product(url: str) -> dict | None:
@@ -45,6 +60,7 @@ async def scrape_amazon_product(url: str) -> dict | None:
         url = await resolve_short_url(url)
         asin = extract_asin(url)
         if not asin:
+            print(f"Could not extract ASIN from: {url}")
             return None
 
         product_url = f"https://www.amazon.eg/dp/{asin}"
