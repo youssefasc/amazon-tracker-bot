@@ -516,6 +516,44 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def debug_url(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    args = ctx.args
+    if not args:
+        await update.message.reply_text("Usage: /debug <url>")
+        return
+    url = args[0]
+    await update.message.reply_text(f"🔍 Testing: {url}")
+    try:
+        from playwright.async_api import async_playwright
+        import asyncio
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page = await context.new_page()
+            resp = await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            status = resp.status if resp else "None"
+            url_after = page.url
+            await asyncio.sleep(3)
+            url_final = page.url
+            title = await page.title()
+            await browser.close()
+
+        msg = (
+            f"📊 Debug Result:\n\n"
+            f"HTTP: {status}\n"
+            f"URL after load: {url_after}\n"
+            f"URL after 3s: {url_final}\n"
+            f"Title: {title[:100]}"
+        )
+        await update.message.reply_text(msg)
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
 async def admin_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -588,6 +626,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", admin_stats))
+    app.add_handler(CommandHandler("debug", debug_url))
     app.add_handler(add_conv)
     app.add_handler(search_conv)
     app.add_handler(screenshot_conv)
