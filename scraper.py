@@ -29,153 +29,141 @@ REDIRECT_DOMAINS = ["amzn.to", "amzn.eu", "link.amazon.com", "link.amazon/", "am
 AMAZON_PRODUCT_DOMAINS = ["amazon.eg", "amazon.com", "amazon.co.uk", "amazon.de", "amazon.fr"]
 
 
-async def bypass_bot_check(page) -> bool:
-    """Click 'continue shopping' button if Amazon shows bot check"""
+async def bypass_bot_check(page):
+    """Click continue button if Amazon shows bot check page"""
     try:
-        # Look for the Arabic continue button
-        btn = await page.query_selector("input[type='submit'], button[type='submit'], .a-button-input")
-        if btn:
-            await btn.click()
-            await asyncio.sleep(3)
-            return True
-        # Try by text
-        for selector in ["text=متابعة التسوق", "text=Continue shopping", "[name='continue']"]:
-            try:
-                el = await page.query_selector(selector)
-                if el:
-                    await el.click()
-                    await asyncio.sleep(3)
-                    return True
-            except:
-                pass
-    except:
-        pass
-    return False
-    """Extract product info from an already-loaded Amazon page"""
-    # Wait for product title to appear
-    try:
-        await page.wait_for_selector("#productTitle", timeout=10000)
+        for selector in [
+            "input[type='submit']",
+            "button[type='submit']",
+            ".a-button-input",
+            "[name='continue']",
+        ]:
+            el = await page.query_selector(selector)
+            if el:
+                await el.click()
+                await asyncio.sleep(3)
+                return
     except:
         pass
 
-    await asyncio.sleep(1)
 
-    # Title
-    title = None
-    for selector in ["#productTitle", "span#productTitle", "h1.a-size-large"]:
-        try:
-            el = await page.query_selector(selector)
-            if el:
-                title = (await el.inner_text()).strip()
-                if title:
-                    break
-        except:
-            pass
-
-    # Price
-    price = None
-    price_selectors = [
-        "span.priceToPay span.a-price-whole",
-        ".apexPriceToPay span.a-price-whole",
-        "#corePrice_feature_div span.a-price-whole",
-        "span.a-price-whole",
-        "#priceblock_ourprice",
-        "#priceblock_dealprice",
-        ".a-price .a-offscreen",
-    ]
-    for selector in price_selectors:
-        try:
-            el = await page.query_selector(selector)
-            if el:
-                raw = (await el.inner_text()).strip()
-                cleaned = re.sub(r"[^\d.]", "", raw.replace(",", ""))
-                if cleaned:
-                    price = float(cleaned)
-                    break
-        except:
-            pass
-
-    # Image
-    image_url = None
-    for selector in ["#landingImage", "#imgBlkFront", "#main-image"]:
-        try:
-            el = await page.query_selector(selector)
-            if el:
-                image_url = await el.get_attribute("src")
-                if not image_url:
-                    image_url = await el.get_attribute("data-old-hires")
-                if image_url:
-                    break
-        except:
-            pass
-
-    print(f"Extracted — title: {bool(title)}, price: {price}, url: {page.url[:60]}")
-    return {"title": title, "price": price, "image_url": image_url or ""}
+async def new_browser_context(p):
+    browser = await p.chromium.launch(
+        headless=True,
+        args=["--no-sandbox", "--disable-setuid-sandbox"]
+    )
+    context = await browser.new_context(
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        locale="ar-EG",
+        extra_http_headers={"Accept-Language": "ar-EG,ar;q=0.9,en;q=0.8"},
+    )
+    return browser, context
 
 
 async def scrape_amazon_product(url: str) -> dict | None:
-    """Scrape product info — handles short links and direct amazon.eg links"""
+    """Scrape product — same logic as /debug command"""
     try:
         needs_resolve = any(d in url for d in REDIRECT_DOMAINS)
 
         async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox"]
-            )
-            context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                locale="ar-EG",
-                extra_http_headers={"Accept-Language": "ar-EG,ar;q=0.9,en;q=0.8"},
-            )
+            browser, context = await new_browser_context(p)
             page = await context.new_page()
 
+            resp = await page.goto(url, wait_until="domcontentloaded", timeout=25000)
+            print(f"HTTP: {resp.status if resp else 'None'}, URL: {page.url[:60]}")
+
+            # Handle bot check
+            await bypass_bot_check(page)
+
+            # If short link, wait for redirect to amazon product page
             if needs_resolve:
-                # Open short link and wait for redirect to amazon product page
-                await page.goto(url, wait_until="domcontentloaded", timeout=25000)
-                # Handle bot check
-                await bypass_bot_check(page)
                 for _ in range(10):
                     await asyncio.sleep(1)
                     current = page.url
                     if any(d in current for d in AMAZON_PRODUCT_DOMAINS) and "/dp/" in current:
-                        print(f"Redirected to: {current}")
+                        print(f"Redirected to: {current[:60]}")
                         break
                 # Handle bot check again after redirect
                 await bypass_bot_check(page)
-                final_url = page.url
-            else:
-                # Direct amazon link
-                asin = extract_asin(url)
-                if not asin:
-                    await browser.close()
-                    return None
-                final_url = f"https://www.amazon.eg/dp/{asin}"
-                await page.goto(final_url, wait_until="domcontentloaded", timeout=30000)
-                await bypass_bot_check(page)
 
-            # Extract ASIN from final URL
+            print(f"Final URL: {page.url[:80]}")
+
+            # Extract ASIN
             asin = extract_asin(page.url)
             if not asin:
-                print(f"No ASIN in final URL: {page.url}")
+                print(f"No ASIN found in: {page.url}")
                 await browser.close()
                 return None
 
-            # Extract product data from the current page
-            data = await extract_product_from_page(page)
-            await browser.close()
+            # Wait for product title
+            try:
+                await page.wait_for_selector("#productTitle", timeout=10000)
+            except:
+                pass
 
-            if not data["title"] or not data["price"]:
+            await asyncio.sleep(1)
+
+            # Title
+            title = None
+            for selector in ["#productTitle", "span#productTitle", "h1.a-size-large"]:
+                try:
+                    el = await page.query_selector(selector)
+                    if el:
+                        title = (await el.inner_text()).strip()
+                        if title:
+                            break
+                except:
+                    pass
+
+            # Price
+            price = None
+            for selector in [
+                "span.priceToPay span.a-price-whole",
+                ".apexPriceToPay span.a-price-whole",
+                "#corePrice_feature_div span.a-price-whole",
+                "span.a-price-whole",
+                "#priceblock_ourprice",
+                "#priceblock_dealprice",
+                ".a-price .a-offscreen",
+            ]:
+                try:
+                    el = await page.query_selector(selector)
+                    if el:
+                        raw = (await el.inner_text()).strip()
+                        cleaned = re.sub(r"[^\d.]", "", raw.replace(",", ""))
+                        if cleaned:
+                            price = float(cleaned)
+                            break
+                except:
+                    pass
+
+            # Image
+            image_url = None
+            for selector in ["#landingImage", "#imgBlkFront", "#main-image"]:
+                try:
+                    el = await page.query_selector(selector)
+                    if el:
+                        image_url = await el.get_attribute("src")
+                        if not image_url:
+                            image_url = await el.get_attribute("data-old-hires")
+                        if image_url:
+                            break
+                except:
+                    pass
+
+            await browser.close()
+            print(f"Result — title: {bool(title)}, price: {price}")
+
+            if not title or not price:
                 return None
 
-            affiliate_url = make_affiliate_url(asin)
             return {
                 "asin": asin,
-                "title": data["title"][:200],
+                "title": title[:200],
                 "url": f"https://www.amazon.eg/dp/{asin}",
-                "affiliate_url": affiliate_url,
-                "image_url": data["image_url"],
-                "price": data["price"],
+                "affiliate_url": make_affiliate_url(asin),
+                "image_url": image_url or "",
+                "price": price,
             }
 
     except Exception as e:
@@ -184,19 +172,11 @@ async def scrape_amazon_product(url: str) -> dict | None:
 
 
 async def get_current_price(asin: str) -> float | None:
-    """Get only the current price for a product"""
     try:
-        url = f"https://www.amazon.eg/dp/{asin}"
         async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox"]
-            )
-            context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            )
+            browser, context = await new_browser_context(p)
             page = await context.new_page()
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            await page.goto(f"https://www.amazon.eg/dp/{asin}", wait_until="domcontentloaded", timeout=30000)
             await bypass_bot_check(page)
 
             try:
@@ -204,7 +184,7 @@ async def get_current_price(asin: str) -> float | None:
             except:
                 pass
 
-            price_selectors = [
+            for selector in [
                 "span.priceToPay span.a-price-whole",
                 ".apexPriceToPay span.a-price-whole",
                 "#corePrice_feature_div span.a-price-whole",
@@ -212,8 +192,7 @@ async def get_current_price(asin: str) -> float | None:
                 "#priceblock_ourprice",
                 "#priceblock_dealprice",
                 ".a-price .a-offscreen",
-            ]
-            for selector in price_selectors:
+            ]:
                 try:
                     el = await page.query_selector(selector)
                     if el:
@@ -233,24 +212,19 @@ async def get_current_price(asin: str) -> float | None:
 
 
 async def search_amazon(query: str) -> list[dict]:
-    """Search Amazon Egypt for products"""
     try:
-        search_url = f"https://www.amazon.eg/s?k={query.replace(' ', '+')}"
         async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox"]
-            )
-            context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            )
+            browser, context = await new_browser_context(p)
             page = await context.new_page()
-            await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+            await page.goto(
+                f"https://www.amazon.eg/s?k={query.replace(' ', '+')}",
+                wait_until="domcontentloaded", timeout=30000
+            )
+            await bypass_bot_check(page)
             await asyncio.sleep(2)
 
             results = []
             items = await page.query_selector_all("[data-component-type='s-search-result']")
-
             for item in items[:5]:
                 try:
                     asin = await item.get_attribute("data-asin")
