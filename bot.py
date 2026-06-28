@@ -382,16 +382,32 @@ async def receive_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(f"✅ لقيت {len(results)} نتيجة:")
 
     for r in results:
+        rating_text = f"⭐ {r['rating']}\n" if r.get("rating") else ""
         text = (
-            f"🛍 <b>{r['title'][:100]}</b>\n"
-            f"💰 {format_price(r['price'])}"
+            f"🛍 <b>{r['title'][:100]}</b>\n\n"
+            f"{rating_text}"
+            f"💰 <b>{format_price(r['price'])}</b>"
         )
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("➕ تتبع السعر", callback_data=f"track_url_{r['asin']}")],
             [InlineKeyboardButton("🔗 فتح في أمازون", url=r["affiliate_url"])],
         ])
-        await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML,
-                                        reply_markup=keyboard)
+        try:
+            if r.get("image_url"):
+                await update.effective_message.reply_photo(
+                    photo=r["image_url"],
+                    caption=text,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=keyboard
+                )
+            else:
+                await update.effective_message.reply_text(
+                    text, parse_mode=ParseMode.HTML, reply_markup=keyboard
+                )
+        except Exception:
+            await update.effective_message.reply_text(
+                text, parse_mode=ParseMode.HTML, reply_markup=keyboard
+            )
 
     return ConversationHandler.END
 
