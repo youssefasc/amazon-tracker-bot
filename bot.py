@@ -580,6 +580,8 @@ async def debug_url(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 except:
                     found_selectors.append(f"❌ {sel}")
 
+            # Screenshot
+            screenshot = await page.screenshot(full_page=False)
             await browser.close()
 
         msg = (
@@ -592,6 +594,7 @@ async def debug_url(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"Selectors:\n" + "\n".join(found_selectors)
         )
         await update.message.reply_text(msg)
+        await update.message.reply_photo(photo=screenshot, caption="📸 Screenshot of the page")
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}")
 
