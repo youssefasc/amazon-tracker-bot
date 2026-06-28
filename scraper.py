@@ -108,14 +108,18 @@ async def scrape_amazon_product(url: str) -> dict | None:
                 await browser.close()
                 return None
 
-            # Always open a fresh clean page for the product
+            # Open a fresh clean page with NO ref parameters
             product_url = f"https://www.amazon.eg/dp/{asin}"
             print(f"Opening fresh product page: {product_url}")
             fresh_page = await context.new_page()
-            await fresh_page.goto(product_url, wait_until="domcontentloaded", timeout=30000)
+            await fresh_page.goto(product_url, wait_until="networkidle", timeout=35000)
+
             # Handle bot check on fresh page
             if "/dp/" not in fresh_page.url and "/gp/" not in fresh_page.url:
                 await bypass_bot_check(fresh_page)
+                await asyncio.sleep(3)
+
+            print(f"Fresh page URL: {fresh_page.url[:80]}")
             await page.close()
 
             # Wait for product title on fresh page
