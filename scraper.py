@@ -1,6 +1,7 @@
 import re
 import asyncio
 from playwright.async_api import async_playwright
+from playwright_stealth import stealth_async
 from config import AFFILIATE_TAG
 
 
@@ -67,6 +68,13 @@ async def new_browser_context(p):
     return browser, context
 
 
+async def new_stealth_page(context):
+    """Create a new page with stealth mode applied"""
+    page = await new_stealth_page(context)
+    await stealth_async(page)
+    return page
+
+
 async def scrape_amazon_product(url: str) -> dict | None:
     """Scrape product — same logic as /debug command"""
     try:
@@ -74,7 +82,7 @@ async def scrape_amazon_product(url: str) -> dict | None:
 
         async with async_playwright() as p:
             browser, context = await new_browser_context(p)
-            page = await context.new_page()
+            page = await new_stealth_page(context)
 
             resp = await page.goto(url, wait_until="domcontentloaded", timeout=25000)
             print(f"HTTP: {resp.status if resp else 'None'}, URL: {page.url[:60]}")
@@ -111,7 +119,7 @@ async def scrape_amazon_product(url: str) -> dict | None:
             # Open a fresh clean page with NO ref parameters
             product_url = f"https://www.amazon.eg/dp/{asin}"
             print(f"Opening fresh product page: {product_url}")
-            fresh_page = await context.new_page()
+            fresh_page = await new_stealth_page(context)
             await fresh_page.goto(product_url, wait_until="networkidle", timeout=35000)
 
             # Handle bot check on fresh page
@@ -202,7 +210,7 @@ async def get_current_price(asin: str) -> float | None:
     try:
         async with async_playwright() as p:
             browser, context = await new_browser_context(p)
-            page = await context.new_page()
+            page = await new_stealth_page(context)
             await page.goto(f"https://www.amazon.eg/dp/{asin}", wait_until="domcontentloaded", timeout=30000)
             await bypass_bot_check(page)
 
@@ -242,7 +250,7 @@ async def search_amazon(query: str) -> list[dict]:
     try:
         async with async_playwright() as p:
             browser, context = await new_browser_context(p)
-            page = await context.new_page()
+            page = await new_stealth_page(context)
             await page.goto(
                 f"https://www.amazon.eg/s?k={query.replace(' ', '+')}",
                 wait_until="domcontentloaded", timeout=30000
