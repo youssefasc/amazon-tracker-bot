@@ -170,7 +170,7 @@ async def receive_link(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     product = await scrape_amazon_product(url)
     print(product)
 
-if not product:
+    if not product:
         await msg.edit_text(
             "❌ مقدرتش أقرأ المنتج ده.\n\n"
             "📌 ابعتلي رابط من <b>amazon.eg</b> مباشرة\n"
