@@ -10,6 +10,6 @@ INSTAPAY_LINK = "https://ipn.eg/S/tecma/instapay/9QOBx7"
 
 CHECK_INTERVAL_MINUTES = 60
 ALERT_COOLDOWN_MINUTES = 10
-DEALS_POST_INTERVAL_HOURS = 6  # كل 6 ساعات ينزل عروض
+DEALS_POST_INTERVAL_HOURS = 6  # كل 6 ساعات ينزل عروض — بيتغير من الـ scheduler
 
 DB_PATH = "data/tracker.db"
