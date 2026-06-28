@@ -173,11 +173,33 @@ async def search_amazon(query: str) -> list[dict]:
                     price_raw = (await price_el.inner_text()).strip() if price_el else ""
                     price_clean = re.sub(r"[^\d.]", "", price_raw.replace(",", ""))
                     price = float(price_clean) if price_clean else None
+                    # Image
+                    image_url = ""
+                    for img_sel in ["img.s-image", ".s-product-image-container img"]:
+                        try:
+                            img_el = await item.query_selector(img_sel)
+                            if img_el:
+                                image_url = await img_el.get_attribute("src") or ""
+                                if image_url:
+                                    break
+                        except:
+                            pass
+                    # Rating
+                    rating = ""
+                    try:
+                        rating_el = await item.query_selector("span.a-icon-alt")
+                        if rating_el:
+                            rating_text = (await rating_el.inner_text()).strip()
+                            rating = rating_text.split(" ")[0] if rating_text else ""
+                    except:
+                        pass
                     if title and price:
                         results.append({
                             "asin": asin, "title": title[:150], "price": price,
                             "url": f"https://www.amazon.eg/dp/{asin}",
                             "affiliate_url": make_affiliate_url(asin),
+                            "image_url": image_url,
+                            "rating": rating,
                         })
                 except:
                     continue
