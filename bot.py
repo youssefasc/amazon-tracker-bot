@@ -902,11 +902,13 @@ async def debug_url(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 async def post_init(app: Application):
     await init_db()
+    from datetime import datetime, timedelta
     scheduler = AsyncIOScheduler()
     scheduler.add_job(check_all_prices, "interval",
                       minutes=CHECK_INTERVAL_MINUTES, args=[app.bot])
     scheduler.add_job(post_deals_to_channel, "interval",
-                      minutes=5, args=[app.bot])
+                      minutes=5, args=[app.bot],
+                      next_run_time=datetime.now() + timedelta(minutes=5))
     scheduler.start()
     print(f"✅ Scheduler started")
 
