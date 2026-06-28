@@ -539,6 +539,15 @@ async def debug_url(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             resp = await page.goto(url, wait_until="domcontentloaded", timeout=25000)
             status = resp.status if resp else "None"
 
+            # Handle bot check first
+            try:
+                btn = await page.query_selector("input[type='submit'], button[type='submit'], .a-button-input")
+                if btn:
+                    await btn.click()
+                    await asyncio.sleep(3)
+            except:
+                pass
+
             # Wait for redirect
             for _ in range(10):
                 await asyncio.sleep(1)
