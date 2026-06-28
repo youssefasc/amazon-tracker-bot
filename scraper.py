@@ -23,13 +23,15 @@ def extract_asin(url: str) -> str | None:
 
 
 REDIRECT_DOMAINS = ["amzn.to", "amzn.eu", "link.amazon.com", "amzn.com", "a.co"]
+AMAZON_PRODUCT_DOMAINS = ["amazon.eg", "amazon.com", "amazon.co.uk", "amazon.de", "amazon.fr"]
 
 
 async def resolve_short_url(url: str) -> str:
-    """Resolve any amazon short/redirect link to final URL"""
+    """Resolve any amazon short/redirect link to final product URL"""
     needs_resolve = any(d in url for d in REDIRECT_DOMAINS)
     if not needs_resolve:
         return url
+
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(
@@ -38,19 +40,35 @@ async def resolve_short_url(url: str) -> str:
             )
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                locale="ar-EG",
             )
             page = await context.new_page()
             try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=20000)
-                await asyncio.sleep(1)
+                # Wait for navigation to complete including JS redirects
+                await page.goto(url, wait_until="domcontentloaded", timeout=25000)
+
+                # Wait until URL changes to an amazon product page
+                for _ in range(10):
+                    await asyncio.sleep(1)
+                    current = page.url
+                    if any(d in current for d in AMAZON_PRODUCT_DOMAINS):
+                        # Got to amazon, wait a bit more for final redirect
+                        await asyncio.sleep(1)
+                        resolved = page.url
+                        print(f"Resolved {url} → {resolved}")
+                        await browser.close()
+                        return resolved
+
                 resolved = page.url
+                print(f"Resolved (timeout) {url} → {resolved}")
                 await browser.close()
-                print(f"Resolved {url} → {resolved}")
                 return resolved
-            except:
+            except Exception as e:
+                print(f"Resolve error: {e}")
                 await browser.close()
                 return url
-    except:
+    except Exception as e:
+        print(f"Browser error: {e}")
         return url
 
 
