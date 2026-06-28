@@ -6,6 +6,10 @@ from config import BOT_TOKEN, CHANNEL_ID, ALERT_COOLDOWN_MINUTES
 from database import get_all_active_products, update_product_price, update_product_alert_time
 from scraper import get_current_price, get_deals_from_amazon
 
+# ASINs اللي اتنشرت — بتتمسح كل 24 ساعة
+_posted_asins: dict[str, datetime] = {}
+ASIN_COOLDOWN_HOURS = 24
+
 
 def fp(price: float) -> str:
     return f"{price:,.0f} جنيه"
@@ -86,13 +90,31 @@ async def check_all_prices(bot: Bot):
 
 
 async def post_deals_to_channel(bot: Bot):
-    """Scrape deals and post to channel"""
-    print(f"[{datetime.now().strftime('%H:%M')}] Fetching deals...")
+    """Scrape deals and post to channel — skip already posted ASINs"""
+    global _posted_asins
+    now = datetime.now()
+
+    # Clean up old entries
+    _posted_asins = {
+        asin: t for asin, t in _posted_asins.items()
+        if now - t < timedelta(hours=ASIN_COOLDOWN_HOURS)
+    }
+
+    print(f"[{now.strftime('%H:%M')}] Fetching deals... (posted cache: {len(_posted_asins)})")
     deals = await get_deals_from_amazon()
     if not deals:
         print("No deals found")
         return
+
+    posted = 0
     for deal in deals:
+        asin = deal.get("asin", "")
+
+        # Skip if already posted in last 24h
+        if asin in _posted_asins:
+            print(f"Skipping {asin} — already posted")
+            continue
+
         try:
             orig = f"<s>{fp(deal['original_price'])}</s> → " if deal.get("original_price") else ""
             pct = f"🏷 خصم <b>{deal['discount_pct']}%</b>\n" if deal.get("discount_pct") else ""
@@ -109,7 +131,12 @@ async def post_deals_to_channel(bot: Bot):
                                      caption=msg, parse_mode="HTML")
             else:
                 await bot.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode="HTML")
+
+            # Mark as posted
+            _posted_asins[asin] = now
+            posted += 1
             await asyncio.sleep(5)
         except Exception as e:
             print(f"Deal post error: {e}")
-    print(f"Posted {len(deals)} deals.")
+
+    print(f"Posted {posted} new deals (skipped {len(deals) - posted}).")
