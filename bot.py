@@ -79,7 +79,7 @@ async def add_track_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def receive_link(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
 
-    amazon_domains = ["amazon", "amzn", "a.co"]
+    amazon_domains = ["amazon", "amzn", "a.co", "link.amazon"]
     if not any(d in url for d in amazon_domains):
         await update.message.reply_text("❌ اللينك ده مش من أمازون، جرب تاني.")
         return WAITING_LINK
