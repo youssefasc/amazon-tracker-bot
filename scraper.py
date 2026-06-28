@@ -108,17 +108,19 @@ async def scrape_amazon_product(url: str) -> dict | None:
                 await browser.close()
                 return None
 
-            # If not on product page, navigate directly using ASIN
-            if "/dp/" not in page.url:
-                product_url = f"https://www.amazon.eg/dp/{asin}"
-                print(f"Navigating directly to: {product_url}")
-                await page.goto(product_url, wait_until="domcontentloaded", timeout=30000)
-                if "/dp/" not in page.url:
-                    await bypass_bot_check(page)
+            # Always open a fresh clean page for the product
+            product_url = f"https://www.amazon.eg/dp/{asin}"
+            print(f"Opening fresh product page: {product_url}")
+            fresh_page = await context.new_page()
+            await fresh_page.goto(product_url, wait_until="domcontentloaded", timeout=30000)
+            # Handle bot check on fresh page
+            if "/dp/" not in fresh_page.url and "/gp/" not in fresh_page.url:
+                await bypass_bot_check(fresh_page)
+            await page.close()
 
-            # Wait for product title
+            # Wait for product title on fresh page
             try:
-                await page.wait_for_selector("#productTitle", timeout=10000)
+                await fresh_page.wait_for_selector("#productTitle", timeout=10000)
             except:
                 pass
 
@@ -128,7 +130,7 @@ async def scrape_amazon_product(url: str) -> dict | None:
             title = None
             for selector in ["#productTitle", "span#productTitle", "h1.a-size-large"]:
                 try:
-                    el = await page.query_selector(selector)
+                    el = await fresh_page.query_selector(selector)
                     if el:
                         title = (await el.inner_text()).strip()
                         if title:
@@ -148,7 +150,7 @@ async def scrape_amazon_product(url: str) -> dict | None:
                 ".a-price .a-offscreen",
             ]:
                 try:
-                    el = await page.query_selector(selector)
+                    el = await fresh_page.query_selector(selector)
                     if el:
                         raw = (await el.inner_text()).strip()
                         cleaned = re.sub(r"[^\d.]", "", raw.replace(",", ""))
@@ -162,7 +164,7 @@ async def scrape_amazon_product(url: str) -> dict | None:
             image_url = None
             for selector in ["#landingImage", "#imgBlkFront", "#main-image"]:
                 try:
-                    el = await page.query_selector(selector)
+                    el = await fresh_page.query_selector(selector)
                     if el:
                         image_url = await el.get_attribute("src")
                         if not image_url:
