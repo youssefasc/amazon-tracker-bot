@@ -29,7 +29,28 @@ REDIRECT_DOMAINS = ["amzn.to", "amzn.eu", "link.amazon.com", "link.amazon/", "am
 AMAZON_PRODUCT_DOMAINS = ["amazon.eg", "amazon.com", "amazon.co.uk", "amazon.de", "amazon.fr"]
 
 
-async def extract_product_from_page(page) -> dict | None:
+async def bypass_bot_check(page) -> bool:
+    """Click 'continue shopping' button if Amazon shows bot check"""
+    try:
+        # Look for the Arabic continue button
+        btn = await page.query_selector("input[type='submit'], button[type='submit'], .a-button-input")
+        if btn:
+            await btn.click()
+            await asyncio.sleep(3)
+            return True
+        # Try by text
+        for selector in ["text=متابعة التسوق", "text=Continue shopping", "[name='continue']"]:
+            try:
+                el = await page.query_selector(selector)
+                if el:
+                    await el.click()
+                    await asyncio.sleep(3)
+                    return True
+            except:
+                pass
+    except:
+        pass
+    return False
     """Extract product info from an already-loaded Amazon page"""
     # Wait for product title to appear
     try:
@@ -112,12 +133,16 @@ async def scrape_amazon_product(url: str) -> dict | None:
             if needs_resolve:
                 # Open short link and wait for redirect to amazon product page
                 await page.goto(url, wait_until="domcontentloaded", timeout=25000)
+                # Handle bot check
+                await bypass_bot_check(page)
                 for _ in range(10):
                     await asyncio.sleep(1)
                     current = page.url
                     if any(d in current for d in AMAZON_PRODUCT_DOMAINS) and "/dp/" in current:
                         print(f"Redirected to: {current}")
                         break
+                # Handle bot check again after redirect
+                await bypass_bot_check(page)
                 final_url = page.url
             else:
                 # Direct amazon link
@@ -127,6 +152,7 @@ async def scrape_amazon_product(url: str) -> dict | None:
                     return None
                 final_url = f"https://www.amazon.eg/dp/{asin}"
                 await page.goto(final_url, wait_until="domcontentloaded", timeout=30000)
+                await bypass_bot_check(page)
 
             # Extract ASIN from final URL
             asin = extract_asin(page.url)
@@ -171,6 +197,7 @@ async def get_current_price(asin: str) -> float | None:
             )
             page = await context.new_page()
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            await bypass_bot_check(page)
 
             try:
                 await page.wait_for_selector("span.a-price-whole", timeout=8000)
