@@ -531,23 +531,65 @@ async def debug_url(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
             context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                locale="ar-EG",
+                extra_http_headers={"Accept-Language": "ar-EG,ar;q=0.9,en;q=0.8"},
             )
             page = await context.new_page()
-            resp = await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            resp = await page.goto(url, wait_until="domcontentloaded", timeout=25000)
             status = resp.status if resp else "None"
-            url_after = page.url
-            await asyncio.sleep(3)
+
+            # Wait for redirect
+            for _ in range(10):
+                await asyncio.sleep(1)
+                if "amazon.eg" in page.url and "/dp/" in page.url:
+                    break
+
             url_final = page.url
             title = await page.title()
+
+            # Try to find product title
+            prod_title = "NOT FOUND"
+            for sel in ["#productTitle", "span#productTitle"]:
+                try:
+                    await page.wait_for_selector(sel, timeout=5000)
+                    el = await page.query_selector(sel)
+                    if el:
+                        prod_title = (await el.inner_text()).strip()[:80]
+                        break
+                except:
+                    pass
+
+            # Try to find price
+            prod_price = "NOT FOUND"
+            for sel in ["span.priceToPay span.a-price-whole", ".apexPriceToPay span.a-price-whole", "span.a-price-whole"]:
+                try:
+                    el = await page.query_selector(sel)
+                    if el:
+                        prod_price = (await el.inner_text()).strip()
+                        break
+                except:
+                    pass
+
+            # Get all text selectors found on page
+            found_selectors = []
+            for sel in ["#productTitle", "span.a-price-whole", "#landingImage", ".apexPriceToPay"]:
+                try:
+                    el = await page.query_selector(sel)
+                    found_selectors.append(f"{'✅' if el else '❌'} {sel}")
+                except:
+                    found_selectors.append(f"❌ {sel}")
+
             await browser.close()
 
         msg = (
             f"📊 Debug Result:\n\n"
             f"HTTP: {status}\n"
-            f"URL after load: {url_after}\n"
-            f"URL after 3s: {url_final}\n"
-            f"Title: {title[:100]}"
+            f"Final URL: {url_final[:80]}\n"
+            f"Page Title: {title}\n\n"
+            f"Product Title: {prod_title}\n"
+            f"Price: {prod_price}\n\n"
+            f"Selectors:\n" + "\n".join(found_selectors)
         )
         await update.message.reply_text(msg)
     except Exception as e:
