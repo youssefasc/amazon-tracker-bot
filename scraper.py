@@ -22,7 +22,7 @@ def extract_asin(url: str) -> str | None:
     return None
 
 
-REDIRECT_DOMAINS = ["amzn.to", "amzn.eu", "link.amazon.com", "amzn.com", "a.co"]
+REDIRECT_DOMAINS = ["amzn.to", "amzn.eu", "link.amazon.com", "link.amazon/", "amzn.com", "a.co"]
 AMAZON_PRODUCT_DOMAINS = ["amazon.eg", "amazon.com", "amazon.co.uk", "amazon.de", "amazon.fr"]
 
 
