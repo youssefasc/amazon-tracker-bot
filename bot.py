@@ -52,8 +52,10 @@ async def is_member(bot, user_id: int) -> bool:
     try:
         member = await bot.get_chat_member(CHANNEL_ID, user_id)
         return member.status not in ["left", "kicked", "banned"]
-    except:
-        return False
+    except Exception as e:
+        print(f"is_member error: {e}")
+        # لو مش قادر يتحقق، خليه يعدي عشان البوت ميوقفش
+        return True
 
 
 async def check_membership(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -120,7 +122,10 @@ async def check_membership_callback(update: Update, ctx: ContextTypes.DEFAULT_TY
     await query.answer()
     user = update.effective_user
     if await is_member(ctx.bot, user.id):
-        await query.message.edit_text("✅ تم التحقق! اضغط /start")
+        try:
+            await query.message.edit_text("✅ تم التحقق! اضغط /start")
+        except:
+            await query.message.reply_text("✅ تم التحقق! اضغط /start")
     else:
         await query.answer("❌ لسه مشتركتش في القناة!", show_alert=True)
 
