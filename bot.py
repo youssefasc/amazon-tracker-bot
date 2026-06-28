@@ -46,7 +46,7 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"<b>الخطة المجانية:</b> تتابع لحد 5 منتجات\n"
         f"<b>الخطة المدفوعة:</b> غير محدودة بـ 120 جنيه/شهر"
     )
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML,
+    await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML,
                                     reply_markup=main_menu())
 
 
@@ -57,7 +57,7 @@ async def add_track_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     premium = await is_premium(user_id)
 
     if not premium and count >= FREE_LIMIT:
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             f"⚠️ وصلت للحد الأقصى في الخطة المجانية ({FREE_LIMIT} منتجات)\n\n"
             f"ترقّى للخطة المدفوعة عشان تتابع منتجات غير محدودة 👑",
             reply_markup=InlineKeyboardMarkup([[
@@ -66,7 +66,7 @@ async def add_track_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         return ConversationHandler.END
 
-    await update.message.reply_text(
+    await update.effective_message.reply_text(
         "🔗 ابعتلي رابط المنتج من أمازون مصر\n\n"
         "✅ بيقبل روابط عادية وروابط amzn.to المختصرة",
         reply_markup=InlineKeyboardMarkup([[
@@ -77,14 +77,14 @@ async def add_track_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def receive_link(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    url = update.message.text.strip()
+    url = update.effective_message.text.strip()
 
     amazon_domains = ["amazon", "amzn", "a.co", "link.amazon"]
     if not any(d in url for d in amazon_domains):
-        await update.message.reply_text("❌ اللينك ده مش من أمازون، جرب تاني.")
+        await update.effective_message.reply_text("❌ اللينك ده مش من أمازون، جرب تاني.")
         return WAITING_LINK
 
-    msg = await update.message.reply_text("⏳ بقرأ المنتج، استنى...")
+    msg = await update.effective_message.reply_text("⏳ بقرأ المنتج، استنى...")
 
     product = await scrape_amazon_product(url)
 
@@ -122,14 +122,14 @@ async def receive_link(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ])
 
     if product["image_url"]:
-        await update.message.reply_photo(
+        await update.effective_message.reply_photo(
             photo=product["image_url"],
             caption=text,
             parse_mode=ParseMode.HTML,
             reply_markup=keyboard
         )
     else:
-        await update.message.reply_text(text, parse_mode=ParseMode.HTML,
+        await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML,
                                         reply_markup=keyboard)
     return WAITING_TARGET
 
@@ -168,12 +168,12 @@ async def target_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def receive_target(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     mode = ctx.user_data.get("target_mode")
-    text = update.message.text.strip()
+    text = update.effective_message.text.strip()
 
     try:
         value = float(re.sub(r"[^\d.]", "", text))
     except:
-        await update.message.reply_text("❌ رقم غلط، جرب تاني:")
+        await update.effective_message.reply_text("❌ رقم غلط، جرب تاني:")
         return WAITING_TARGET
 
     if mode == "price":
@@ -216,7 +216,7 @@ async def save_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE,
         f"هبعتلك تنبيه فوراً لما السعر ينزل 🔔"
     )
 
-    await update.message.reply_text(msg, parse_mode=ParseMode.HTML,
+    await update.effective_message.reply_text(msg, parse_mode=ParseMode.HTML,
                                     reply_markup=main_menu())
     ctx.user_data.clear()
 
@@ -227,7 +227,7 @@ async def my_products(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     products = await get_user_products(user_id)
 
     if not products:
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             "📦 مفيش منتجات متابَعة دلوقتي.\n\nاضغط ➕ إضافة تتبع سعر جديد",
             reply_markup=main_menu()
         )
@@ -237,7 +237,7 @@ async def my_products(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     count = len(products)
     limit_text = "♾️ غير محدودة" if premium else f"{count}/{FREE_LIMIT}"
 
-    await update.message.reply_text(
+    await update.effective_message.reply_text(
         f"📦 <b>منتجاتك ({limit_text})</b>\n\nاختار منتج لإدارته:",
         parse_mode=ParseMode.HTML
     )
@@ -270,7 +270,7 @@ async def my_products(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ],
         ])
 
-        await update.message.reply_text(text, parse_mode=ParseMode.HTML,
+        await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML,
                                         reply_markup=keyboard)
 
 
@@ -339,12 +339,12 @@ async def receive_edit_target(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     pid = ctx.user_data.get("editing_product_id")
     mode = ctx.user_data.get("edit_mode")
     user_id = update.effective_user.id
-    text = update.message.text.strip()
+    text = update.effective_message.text.strip()
 
     try:
         value = float(re.sub(r"[^\d.]", "", text))
     except:
-        await update.message.reply_text("❌ رقم غلط:")
+        await update.effective_message.reply_text("❌ رقم غلط:")
         return WAITING_EDIT_TARGET
 
     if mode == "price":
@@ -352,14 +352,14 @@ async def receive_edit_target(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     else:
         await update_target(pid, user_id, target_price=None, target_percent=value)
 
-    await update.message.reply_text("✅ تم تحديث الهدف!", reply_markup=main_menu())
+    await update.effective_message.reply_text("✅ تم تحديث الهدف!", reply_markup=main_menu())
     ctx.user_data.clear()
     return ConversationHandler.END
 
 
 # ─── SEARCH ───────────────────────────────────────────────────────────────────
 async def search_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+    await update.effective_message.reply_text(
         "🔍 اكتب اسم المنتج اللي بتدور عليه:",
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("❌ إلغاء", callback_data="cancel")
@@ -369,8 +369,8 @@ async def search_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def receive_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    query_text = update.message.text.strip()
-    msg = await update.message.reply_text("🔍 بدور...")
+    query_text = update.effective_message.text.strip()
+    msg = await update.effective_message.reply_text("🔍 بدور...")
 
     results = await search_amazon(query_text)
 
@@ -379,7 +379,7 @@ async def receive_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return WAITING_SEARCH
 
     await msg.delete()
-    await update.message.reply_text(f"✅ لقيت {len(results)} نتيجة:")
+    await update.effective_message.reply_text(f"✅ لقيت {len(results)} نتيجة:")
 
     for r in results:
         text = (
@@ -390,7 +390,7 @@ async def receive_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("➕ تتبع السعر", callback_data=f"track_url_{r['asin']}")],
             [InlineKeyboardButton("🔗 فتح في أمازون", url=r["affiliate_url"])],
         ])
-        await update.message.reply_text(text, parse_mode=ParseMode.HTML,
+        await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML,
                                         reply_markup=keyboard)
 
     return ConversationHandler.END
@@ -411,7 +411,7 @@ async def my_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"🔕 مكتومة: {muted}\n"
         f"🔔 نشطة: {count - muted}"
     )
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
 # ─── UPGRADE ──────────────────────────────────────────────────────────────────
@@ -438,7 +438,7 @@ async def upgrade_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             text, parse_mode=ParseMode.HTML, reply_markup=keyboard
         )
     else:
-        await update.message.reply_text(text, parse_mode=ParseMode.HTML,
+        await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML,
                                         reply_markup=keyboard)
 
 
@@ -453,9 +453,9 @@ async def screenshot_prompt(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def receive_screenshot(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    photo = update.message.photo
+    photo = update.effective_message.photo
     if not photo:
-        await update.message.reply_text("❌ ابعت صورة سكرين شوت.")
+        await update.effective_message.reply_text("❌ ابعت صورة سكرين شوت.")
         return WAITING_SCREENSHOT
 
     file_id = photo[-1].file_id
@@ -476,7 +476,7 @@ async def receive_screenshot(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await bot.send_photo(chat_id=ADMIN_ID, photo=file_id,
                          caption=caption, reply_markup=keyboard)
 
-    await update.message.reply_text(
+    await update.effective_message.reply_text(
         "✅ تم استلام السكرين شوت!\nهيتم التفعيل خلال دقايق 🕐",
         reply_markup=main_menu()
     )
@@ -521,10 +521,10 @@ async def debug_url(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     args = ctx.args
     if not args:
-        await update.message.reply_text("Usage: /debug <url>")
+        await update.effective_message.reply_text("Usage: /debug <url>")
         return
     url = args[0]
-    await update.message.reply_text(f"🔍 Testing: {url}")
+    await update.effective_message.reply_text(f"🔍 Testing: {url}")
     try:
         from playwright.async_api import async_playwright
         import asyncio
@@ -602,10 +602,10 @@ async def debug_url(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"Price: {prod_price}\n\n"
             f"Selectors:\n" + "\n".join(found_selectors)
         )
-        await update.message.reply_text(msg)
-        await update.message.reply_photo(photo=screenshot, caption="📸 Screenshot of the page")
+        await update.effective_message.reply_text(msg)
+        await update.effective_message.reply_photo(photo=screenshot, caption="📸 Screenshot of the page")
     except Exception as e:
-        await update.message.reply_text(f"❌ Error: {e}")
+        await update.effective_message.reply_text(f"❌ Error: {e}")
 
 
 async def admin_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -622,7 +622,7 @@ async def admin_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"👑 مشتركين مدفوعين: {premium_count}\n"
         f"📦 منتجات تحت المراقبة: {len(products)}"
     )
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
