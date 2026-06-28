@@ -1,4 +1,5 @@
 import aiosqlite
+from datetime import datetime, timedelta
 from config import DB_PATH
 
 
@@ -11,6 +12,9 @@ async def init_db():
                 full_name TEXT,
                 is_premium INTEGER DEFAULT 0,
                 premium_expires TEXT,
+                extra_slots INTEGER DEFAULT 0,
+                extra_slots_expires TEXT,
+                referred_by INTEGER,
                 joined_at TEXT DEFAULT (datetime('now'))
             )
         """)
@@ -43,9 +47,30 @@ async def init_db():
                 reviewed_at TEXT
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS coupons (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT UNIQUE,
+                days INTEGER DEFAULT 0,
+                extra_slots INTEGER DEFAULT 0,
+                max_uses INTEGER DEFAULT 1,
+                used_count INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now')),
+                expires_at TEXT
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS coupon_uses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                coupon_id INTEGER,
+                user_id INTEGER,
+                used_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
         await db.commit()
 
 
+# ── Users ──────────────────────────────────────────────────────────────────────
 async def get_user(user_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
@@ -53,13 +78,26 @@ async def get_user(user_id: int):
             return await cur.fetchone()
 
 
-async def upsert_user(user_id: int, username: str, full_name: str):
+async def upsert_user(user_id: int, username: str, full_name: str, referred_by: int = None):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
-            INSERT INTO users (user_id, username, full_name)
-            VALUES (?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET username=excluded.username, full_name=excluded.full_name
-        """, (user_id, username, full_name))
+        existing = await db.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+        row = await existing.fetchone()
+        if row:
+            await db.execute("UPDATE users SET username=?, full_name=? WHERE user_id=?",
+                             (username, full_name, user_id))
+        else:
+            await db.execute(
+                "INSERT INTO users (user_id, username, full_name, referred_by) VALUES (?,?,?,?)",
+                (user_id, username, full_name, referred_by)
+            )
+            # Give referrer +1 slot for 30 days
+            if referred_by:
+                await db.execute("""
+                    UPDATE users SET
+                        extra_slots = extra_slots + 1,
+                        extra_slots_expires = datetime('now', '+30 days')
+                    WHERE user_id = ?
+                """, (referred_by,))
         await db.commit()
 
 
@@ -69,37 +107,96 @@ async def is_premium(user_id: int) -> bool:
             "SELECT is_premium, premium_expires FROM users WHERE user_id = ?", (user_id,)
         ) as cur:
             row = await cur.fetchone()
-            if not row:
+            if not row or not row[0]:
                 return False
-            if row[0] == 1:
-                if row[1] is None:
-                    return True
-                from datetime import datetime
-                try:
-                    exp = datetime.fromisoformat(row[1])
-                    return exp > datetime.now()
-                except:
-                    return True
-            return False
+            if row[1] is None:
+                return True
+            try:
+                return datetime.fromisoformat(row[1]) > datetime.now()
+            except:
+                return True
 
 
-async def get_user_product_count(user_id: int) -> int:
+async def get_user_limit(user_id: int) -> int:
+    """Return max products this user can track"""
+    from config import FREE_LIMIT
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT COUNT(*) FROM products WHERE user_id = ?", (user_id,)
+            "SELECT is_premium, premium_expires, extra_slots, extra_slots_expires FROM users WHERE user_id = ?",
+            (user_id,)
         ) as cur:
+            row = await cur.fetchone()
+            if not row:
+                return FREE_LIMIT
+            prem = row[0] and (row[1] is None or datetime.fromisoformat(row[1]) > datetime.now())
+            if prem:
+                return 999999
+            extra = 0
+            if row[2] and row[3]:
+                try:
+                    if datetime.fromisoformat(row[3]) > datetime.now():
+                        extra = row[2]
+                except:
+                    pass
+            return FREE_LIMIT + extra
+
+
+async def get_all_users():
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM users") as cur:
+            return await cur.fetchall()
+
+
+async def activate_premium(user_id: int, days: int = None):
+    async with aiosqlite.connect(DB_PATH) as db:
+        if days:
+            expires = (datetime.now() + timedelta(days=days)).isoformat()
+            await db.execute(
+                "UPDATE users SET is_premium=1, premium_expires=? WHERE user_id=?",
+                (expires, user_id)
+            )
+        else:
+            await db.execute(
+                "UPDATE users SET is_premium=1, premium_expires=NULL WHERE user_id=?",
+                (user_id,)
+            )
+        await db.commit()
+
+
+async def revoke_premium(user_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE users SET is_premium=0, premium_expires=NULL WHERE user_id=?", (user_id,)
+        )
+        await db.commit()
+
+
+async def add_payment_request(user_id: int, file_id: str) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT INTO payment_requests (user_id, screenshot_file_id) VALUES (?, ?)",
+            (user_id, file_id)
+        )
+        await db.commit()
+        return cur.lastrowid
+
+
+# ── Products ───────────────────────────────────────────────────────────────────
+async def get_user_product_count(user_id: int) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT COUNT(*) FROM products WHERE user_id=?", (user_id,)) as cur:
             row = await cur.fetchone()
             return row[0] if row else 0
 
 
-async def add_product(user_id: int, asin: str, title: str, url: str,
-                      affiliate_url: str, image_url: str, price: float,
-                      target_price: float = None, target_percent: float = None) -> int:
+async def add_product(user_id, asin, title, url, affiliate_url, image_url,
+                      price, target_price=None, target_percent=None) -> int:
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("""
-            INSERT INTO products (user_id, asin, title, url, affiliate_url, image_url,
-                                  current_price, target_price, target_percent)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO products (user_id,asin,title,url,affiliate_url,image_url,
+                                  current_price,target_price,target_percent)
+            VALUES (?,?,?,?,?,?,?,?,?)
         """, (user_id, asin, title, url, affiliate_url, image_url,
               price, target_price, target_percent))
         await db.commit()
@@ -110,7 +207,7 @@ async def get_user_products(user_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT * FROM products WHERE user_id = ? ORDER BY added_at DESC", (user_id,)
+            "SELECT * FROM products WHERE user_id=? ORDER BY added_at DESC", (user_id,)
         ) as cur:
             return await cur.fetchall()
 
@@ -118,23 +215,30 @@ async def get_user_products(user_id: int):
 async def get_product(product_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM products WHERE id = ?", (product_id,)) as cur:
+        async with db.execute("SELECT * FROM products WHERE id=?", (product_id,)) as cur:
             return await cur.fetchone()
+
+
+async def get_all_active_products():
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM products WHERE is_muted=0") as cur:
+            return await cur.fetchall()
 
 
 async def update_product_price(product_id: int, new_price: float):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
-            UPDATE products SET current_price = ?, last_checked_at = datetime('now')
-            WHERE id = ?
-        """, (new_price, product_id))
+        await db.execute(
+            "UPDATE products SET current_price=?, last_checked_at=datetime('now') WHERE id=?",
+            (new_price, product_id)
+        )
         await db.commit()
 
 
 async def update_product_alert_time(product_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "UPDATE products SET last_alert_at = datetime('now') WHERE id = ?", (product_id,)
+            "UPDATE products SET last_alert_at=datetime('now') WHERE id=?", (product_id,)
         )
         await db.commit()
 
@@ -142,14 +246,14 @@ async def update_product_alert_time(product_id: int):
 async def toggle_mute(product_id: int, user_id: int) -> bool:
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT is_muted FROM products WHERE id = ? AND user_id = ?", (product_id, user_id)
+            "SELECT is_muted FROM products WHERE id=? AND user_id=?", (product_id, user_id)
         ) as cur:
             row = await cur.fetchone()
             if not row:
                 return False
             new_val = 0 if row[0] else 1
         await db.execute(
-            "UPDATE products SET is_muted = ? WHERE id = ? AND user_id = ?",
+            "UPDATE products SET is_muted=? WHERE id=? AND user_id=?",
             (new_val, product_id, user_id)
         )
         await db.commit()
@@ -159,51 +263,89 @@ async def toggle_mute(product_id: int, user_id: int) -> bool:
 async def delete_product(product_id: int, user_id: int) -> bool:
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
-            "DELETE FROM products WHERE id = ? AND user_id = ?", (product_id, user_id)
+            "DELETE FROM products WHERE id=? AND user_id=?", (product_id, user_id)
         )
         await db.commit()
         return cur.rowcount > 0
 
 
 async def update_target(product_id: int, user_id: int,
-                        target_price: float = None, target_percent: float = None):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
-            UPDATE products SET target_price = ?, target_percent = ?
-            WHERE id = ? AND user_id = ?
-        """, (target_price, target_percent, product_id, user_id))
-        await db.commit()
-
-
-async def get_all_active_products():
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM products WHERE is_muted = 0"
-        ) as cur:
-            return await cur.fetchall()
-
-
-async def activate_premium(user_id: int):
+                        target_price=None, target_percent=None):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "UPDATE users SET is_premium = 1 WHERE user_id = ?", (user_id,)
+            "UPDATE products SET target_price=?, target_percent=? WHERE id=? AND user_id=?",
+            (target_price, target_percent, product_id, user_id)
         )
         await db.commit()
 
 
-async def add_payment_request(user_id: int, file_id: str) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("""
-            INSERT INTO payment_requests (user_id, screenshot_file_id)
-            VALUES (?, ?)
-        """, (user_id, file_id))
-        await db.commit()
-        return cur.lastrowid
+# ── Coupons ────────────────────────────────────────────────────────────────────
+async def create_coupon(code: str, days: int = 0, extra_slots: int = 0,
+                        max_uses: int = 1, expires_at: str = None) -> bool:
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("""
+                INSERT INTO coupons (code, days, extra_slots, max_uses, expires_at)
+                VALUES (?,?,?,?,?)
+            """, (code.upper(), days, extra_slots, max_uses, expires_at))
+            await db.commit()
+            return True
+    except:
+        return False
 
 
-async def get_all_users():
+async def use_coupon(code: str, user_id: int) -> dict | None:
+    """Returns coupon data if valid, None otherwise"""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM users") as cur:
+        async with db.execute(
+            "SELECT * FROM coupons WHERE code=? AND used_count < max_uses", (code.upper(),)
+        ) as cur:
+            coupon = await cur.fetchone()
+        if not coupon:
+            return None
+        # Check expiry
+        if coupon["expires_at"]:
+            try:
+                if datetime.fromisoformat(coupon["expires_at"]) < datetime.now():
+                    return None
+            except:
+                pass
+        # Check if user already used it
+        async with db.execute(
+            "SELECT id FROM coupon_uses WHERE coupon_id=? AND user_id=?",
+            (coupon["id"], user_id)
+        ) as cur:
+            if await cur.fetchone():
+                return None
+        # Apply
+        await db.execute(
+            "UPDATE coupons SET used_count=used_count+1 WHERE id=?", (coupon["id"],)
+        )
+        await db.execute(
+            "INSERT INTO coupon_uses (coupon_id, user_id) VALUES (?,?)",
+            (coupon["id"], user_id)
+        )
+        if coupon["days"] > 0:
+            expires = (datetime.now() + timedelta(days=coupon["days"])).isoformat()
+            await db.execute(
+                "UPDATE users SET is_premium=1, premium_expires=? WHERE user_id=?",
+                (expires, user_id)
+            )
+        if coupon["extra_slots"] > 0:
+            expires = (datetime.now() + timedelta(days=30)).isoformat()
+            await db.execute("""
+                UPDATE users SET
+                    extra_slots = extra_slots + ?,
+                    extra_slots_expires = ?
+                WHERE user_id = ?
+            """, (coupon["extra_slots"], expires, user_id))
+        await db.commit()
+        return dict(coupon)
+
+
+async def get_all_coupons():
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM coupons ORDER BY created_at DESC") as cur:
             return await cur.fetchall()
