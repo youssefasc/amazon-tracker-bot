@@ -93,7 +93,7 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("📢 اشترك في القناة", url=CHANNEL_LINK)],
             [InlineKeyboardButton("✅ اشتركت، تحقق", callback_data="check_membership")],
         ])
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             f"👋 أهلاً <b>{user.first_name}</b>!\n\n"
             "⚠️ لازم تشترك في قناتنا الأول:",
             parse_mode=ParseMode.HTML, reply_markup=keyboard
@@ -112,7 +112,7 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"📋 خطتك الحالية: <b>{plan}</b>\n\n"
         f"اختار من القائمة 👇"
     )
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=main_menu())
+    await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=main_menu())
 
 
 async def check_membership_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
