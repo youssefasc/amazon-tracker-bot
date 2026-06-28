@@ -906,6 +906,12 @@ async def post_init(app: Application):
     print(f"✅ Scheduler started")
 
 
+async def handle_text_fallback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle free text — edit target if editing, otherwise ignore"""
+    if ctx.user_data.get("editing_product_id"):
+        await receive_edit_target(update, ctx)
+
+
 def main():
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
@@ -970,10 +976,8 @@ def main():
     app.add_handler(CallbackQueryHandler(plans_callback, pattern="^show_plans$"))
     app.add_handler(CallbackQueryHandler(product_action_callback,
                                          pattern="^(del_|mute_|edit|track_url_|show_plans|cancel)"))
-    app.add_handler(CallbackQueryHandler(admin_callback, pattern="^(approve_|reject_|admin_)"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,
-                                   lambda u, c: receive_edit_target(u, c)
-                                   if c.user_data.get("editing_product_id") else None))
+    app.add_handler(CallbackQueryHandler(admin_callback, pattern="^(approve_|reject_)"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_fallback))
     print("🚀 Bot started!")
     app.run_polling(drop_pending_updates=True)
 
