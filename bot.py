@@ -901,7 +901,7 @@ async def post_init(app: Application):
     scheduler.add_job(check_all_prices, "interval",
                       minutes=CHECK_INTERVAL_MINUTES, args=[app.bot])
     scheduler.add_job(post_deals_to_channel, "interval",
-                      hours=DEALS_POST_INTERVAL_HOURS, args=[app.bot])
+                      minutes=5, args=[app.bot])
     scheduler.start()
     print(f"✅ Scheduler started")
 
