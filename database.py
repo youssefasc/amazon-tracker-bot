@@ -21,6 +21,16 @@ async def init_db():
                 joined_at TEXT DEFAULT (datetime('now'))
             )
         """)
+        # Migration: add new columns if they don't exist
+        for col, definition in [
+            ("extra_slots", "INTEGER DEFAULT 0"),
+            ("extra_slots_expires", "TEXT"),
+            ("referred_by", "INTEGER"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE users ADD COLUMN {col} {definition}")
+            except:
+                pass  # Column already exists
         await db.execute("""
             CREATE TABLE IF NOT EXISTS products (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
