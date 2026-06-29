@@ -798,6 +798,7 @@ async def admin_panel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("❌ إلغاء باقة", callback_data="admin_revoke")],
         [InlineKeyboardButton("🎫 إنشاء كوبون", callback_data="admin_coupon")],
         [InlineKeyboardButton("⚡ نشر عروض الآن", callback_data="admin_post_deals")],
+        [InlineKeyboardButton("🔄 فحص الأسعار الآن", callback_data="admin_check_prices")],
         [InlineKeyboardButton("👥 المستخدمين", callback_data="admin_users")],
     ])
     await update.effective_message.reply_text(
@@ -857,6 +858,11 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("⏳ بينزل العروض...")
         await post_deals_to_channel(ctx.bot)
         await query.message.reply_text("✅ تم!")
+
+    elif data == "admin_check_prices":
+        await query.message.reply_text("⏳ بيفحص الأسعار...")
+        await check_all_prices(ctx.bot)
+        await query.message.reply_text("✅ تم فحص الأسعار!")
 
     elif data == "admin_users":
         users = await get_all_users()
