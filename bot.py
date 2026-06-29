@@ -39,10 +39,10 @@ def main_menu_keyboard():
         [InlineKeyboardButton("🔍 بحث عن منتج أمازون", callback_data="menu_search"),
          InlineKeyboardButton("📊 إحصائياتي", callback_data="menu_stats")],
         [InlineKeyboardButton("👤 حسابي", callback_data="menu_account"),
-         InlineKeyboardButton("💎 الباقات", callback_data="menu_plans")],
-        [InlineKeyboardButton("🎁 شارك واربح", callback_data="menu_share"),
+         InlineKeyboardButton("💎 الاشتراك", callback_data="menu_plans")],
+        [InlineKeyboardButton("🎁 شير البوت واكسب", callback_data="menu_share"),
          InlineKeyboardButton("🎫 استخدام كوبون", callback_data="menu_coupon")],
-        [InlineKeyboardButton("📢 قناة العروض", url=CHANNEL_LINK),
+        [InlineKeyboardButton("📢 عروض متتفوتش", url=CHANNEL_LINK),
          InlineKeyboardButton("❓ المساعدة", callback_data="menu_help")],
     ])
 
