@@ -571,6 +571,15 @@ async def help_section(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
 
 
+async def feedback_prompt(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
+    await update.callback_query.message.reply_text(
+        "✍️ اكتب مشكلتك أو اقتراحك وهيتم توجيهه للأدمن:",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ إلغاء", callback_data="cancel_conv")]])
+    )
+    return WAITING_FEEDBACK
+
+
 async def cancel_conv(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer("تم الإلغاء")
