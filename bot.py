@@ -321,30 +321,62 @@ async def my_products(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    await update.effective_message.reply_text(
-        f"📦 <b>منتجاتك ({limit_text})</b>", parse_mode=ParseMode.HTML
-    )
+    # Show all products as buttons in one message
+    buttons = []
     for p in products:
-        mute_icon = "🔕" if p["is_muted"] else "🔔"
-        target = (f"🎯 {fp(p['target_price'])}" if p["target_price"]
-                  else f"🎯 {p['target_percent']:.0f}%" if p["target_percent"]
-                  else "🎯 أي انخفاض")
-        text = (f"{mute_icon} <b>{p['title'][:60]}</b>\n"
-                f"💰 {fp(p['current_price'])} · {target}")
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✏️ تعديل", callback_data=f"edit_{p['id']}"),
-             InlineKeyboardButton("🔕 كتم" if not p["is_muted"] else "🔔 تفعيل",
-                                  callback_data=f"mute_{p['id']}"),
-             InlineKeyboardButton("🗑 حذف", callback_data=f"del_{p['id']}")],
-            [InlineKeyboardButton("🔗 فتح في أمازون", url=p["affiliate_url"])],
-        ])
-        await update.effective_message.reply_text(
-            text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+        mute_icon = "🔕 " if p["is_muted"] else ""
+        label = f"{mute_icon}{p['title'][:35]}... — {fp(p['current_price'])}"
+        buttons.append([InlineKeyboardButton(label, callback_data=f"product_{p['id']}")])
+    buttons.append([back_btn()])
 
     await update.effective_message.reply_text(
-        "━━━━━━━━━━━━━━━━━━",
-        reply_markup=InlineKeyboardMarkup([[back_btn()]])
+        f"📦 <b>منتجاتك ({limit_text})</b>\n\nاختار منتج:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(buttons)
     )
+
+
+async def show_product_detail(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    pid = int(query.data.split("_")[1])
+    user_id = update.effective_user.id
+    p = await get_product(pid)
+    if not p or p["user_id"] != user_id:
+        await query.answer("❌ مش لاقي المنتج", show_alert=True)
+        return
+
+    mute_icon = "🔕 مكتوم" if p["is_muted"] else "🔔 نشط"
+    target = (f"💰 {fp(p['target_price'])}" if p["target_price"]
+              else f"📊 {p['target_percent']:.0f}% خصم" if p["target_percent"]
+              else "📉 أي انخفاض")
+
+    text = (
+        f"🛍 <b>{p['title']}</b>\n\n"
+        f"💰 السعر الحالي: <b>{fp(p['current_price'])}</b>\n"
+        f"🎯 الهدف: {target}\n"
+        f"📡 الحالة: {mute_icon}"
+    )
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✏️ تعديل الهدف", callback_data=f"edit_{pid}"),
+         InlineKeyboardButton("🔕 كتم" if not p["is_muted"] else "🔔 تفعيل",
+                              callback_data=f"mute_{pid}")],
+        [InlineKeyboardButton("🔗 فتح في أمازون", url=p["affiliate_url"]),
+         InlineKeyboardButton("🗑 حذف", callback_data=f"del_{pid}")],
+        [InlineKeyboardButton("🔙 منتجاتي", callback_data="menu_products")],
+    ])
+
+    try:
+        if p["image_url"]:
+            await query.message.reply_photo(
+                photo=p["image_url"], caption=text,
+                parse_mode=ParseMode.HTML, reply_markup=keyboard)
+        else:
+            await query.message.reply_text(
+                text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+    except:
+        await query.message.reply_text(
+            text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
 
 
 # ── STATS ─────────────────────────────────────────────────────────────────────
@@ -624,6 +656,8 @@ async def product_action_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE
         pid = int(data.split("_")[1])
         if await delete_product(pid, user_id):
             await query.message.edit_text("🗑 تم الحذف.")
+            await asyncio.sleep(1)
+            await my_products(update, ctx)
         else:
             await query.answer("❌ خطأ", show_alert=True)
 
@@ -631,7 +665,8 @@ async def product_action_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE
         pid = int(data.split("_")[1])
         muted = await toggle_mute(pid, user_id)
         await query.answer("🔕 تم الكتم" if muted else "🔔 تم التفعيل")
-        await my_products(update, ctx)
+        # Refresh product detail
+        await show_product_detail(update, ctx)
 
     elif data.startswith("edit_"):
         pid = int(data.split("_")[1])
@@ -993,6 +1028,7 @@ def main():
     app.add_handler(admin_conv)
     app.add_handler(CallbackQueryHandler(check_membership_callback, pattern="^check_membership$"))
     app.add_handler(CallbackQueryHandler(menu_router, pattern="^menu_"))
+    app.add_handler(CallbackQueryHandler(show_product_detail, pattern="^product_\\d+$"))
     app.add_handler(CallbackQueryHandler(product_action_callback,
                                          pattern="^(del_|mute_|edit_|track_url_|editany_)"))
     app.add_handler(CallbackQueryHandler(admin_callback, pattern="^(approve_|reject_)"))
