@@ -39,10 +39,10 @@ def main_menu_keyboard():
         [InlineKeyboardButton("🔍 بحث عن منتج أمازون", callback_data="menu_search"),
          InlineKeyboardButton("📊 إحصائياتي", callback_data="menu_stats")],
         [InlineKeyboardButton("👤 حسابي", callback_data="menu_account"),
-         InlineKeyboardButton("💎 الاشتراك", callback_data="menu_plans")],
-        [InlineKeyboardButton("🎁 شير البوت واكسب", callback_data="menu_share"),
+         InlineKeyboardButton("💎 الباقات", callback_data="menu_plans")],
+        [InlineKeyboardButton("🎁 شارك واربح", callback_data="menu_share"),
          InlineKeyboardButton("🎫 استخدام كوبون", callback_data="menu_coupon")],
-        [InlineKeyboardButton("📢 عروض متتفوتش", url=CHANNEL_LINK),
+        [InlineKeyboardButton("📢 قناة العروض", url=CHANNEL_LINK),
          InlineKeyboardButton("❓ المساعدة", callback_data="menu_help")],
     ])
 
@@ -571,7 +571,26 @@ async def help_section(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
 
 
-async def feedback_prompt(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cancel_conv(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("تم الإلغاء")
+    ctx.user_data.clear()
+    user = update.effective_user
+    count = await get_user_product_count(user.id)
+    limit = await get_user_limit(user.id)
+    prem = await is_premium(user.id)
+    plan = "👑 مدفوعة ♾️" if prem else f"🆓 مجانية ({count}/{limit})"
+    text = (
+        f"👋 أهلاً <b>{user.first_name}</b>!\n\n"
+        f"🤖 بوت تتبع أسعار أمازون مصر 📉\n\n"
+        f"ابعتلي أي رابط منتج وأنا هراقب سعره!\n\n"
+        f"📋 خطتك: <b>{plan}</b>"
+    )
+    await query.message.reply_text(
+        text, parse_mode=ParseMode.HTML,
+        reply_markup=main_menu_keyboard()
+    )
+    return ConversationHandler.END
     await update.callback_query.answer()
     await update.callback_query.message.reply_text("✍️ اكتب مشكلتك أو اقتراحك:")
     return WAITING_FEEDBACK
@@ -964,46 +983,75 @@ async def post_init(app: Application):
 def main():
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
-    add_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(add_track_start, pattern="^menu_add$")],
-        states={
-            WAITING_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_link)],
-            WAITING_TARGET: [
-                CallbackQueryHandler(target_callback, pattern="^(target_|cancel_conv)"),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_target),
-            ],
-        },
-        fallbacks=[CallbackQueryHandler(target_callback, pattern="^cancel_conv$")],
-        per_message=False,
-    )
-    search_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(search_start, pattern="^menu_search$")],
-        states={WAITING_SEARCH: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_search)]},
-        fallbacks=[CallbackQueryHandler(lambda u, c: ConversationHandler.END, pattern="^cancel_conv$")],
-        per_message=False,
-    )
-    screenshot_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(screenshot_prompt, pattern="^send_screenshot$")],
-        states={WAITING_SCREENSHOT: [MessageHandler(filters.PHOTO, receive_screenshot)]},
-        fallbacks=[],
-        per_message=False,
-    )
     coupon_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(coupon_start, pattern="^menu_coupon$")],
-        states={WAITING_COUPON: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_coupon)]},
-        fallbacks=[CallbackQueryHandler(lambda u, c: ConversationHandler.END, pattern="^cancel_conv$")],
+        states={
+            WAITING_COUPON: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_coupon),
+                CallbackQueryHandler(cancel_conv, pattern="^cancel_conv$"),
+            ]
+        },
+        fallbacks=[CallbackQueryHandler(cancel_conv, pattern="^cancel_conv$")],
         per_message=False,
     )
     feedback_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(feedback_prompt, pattern="^feedback$")],
-        states={WAITING_FEEDBACK: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_feedback)]},
-        fallbacks=[],
+        states={
+            WAITING_FEEDBACK: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_feedback),
+                CallbackQueryHandler(cancel_conv, pattern="^cancel_conv$"),
+            ]
+        },
+        fallbacks=[CallbackQueryHandler(cancel_conv, pattern="^cancel_conv$")],
         per_message=False,
     )
     edit_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(product_action_callback, pattern="^(editprice_|editpct_)")],
-        states={WAITING_EDIT_TARGET: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_edit_target)]},
-        fallbacks=[],
+        states={
+            WAITING_EDIT_TARGET: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_edit_target),
+                CallbackQueryHandler(cancel_conv, pattern="^cancel_conv$"),
+            ]
+        },
+        fallbacks=[CallbackQueryHandler(cancel_conv, pattern="^cancel_conv$")],
+        per_message=False,
+    )
+    add_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(add_track_start, pattern="^menu_add$")],
+        states={
+            WAITING_LINK: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_link),
+                CallbackQueryHandler(cancel_conv, pattern="^cancel_conv$"),
+            ],
+            WAITING_TARGET: [
+                CallbackQueryHandler(target_callback, pattern="^(target_)"),
+                CallbackQueryHandler(cancel_conv, pattern="^cancel_conv$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_target),
+            ],
+        },
+        fallbacks=[CallbackQueryHandler(cancel_conv, pattern="^cancel_conv$")],
+        per_message=False,
+    )
+    search_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(search_start, pattern="^menu_search$")],
+        states={
+            WAITING_SEARCH: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_search),
+                CallbackQueryHandler(cancel_conv, pattern="^cancel_conv$"),
+            ]
+        },
+        fallbacks=[CallbackQueryHandler(cancel_conv, pattern="^cancel_conv$")],
+        per_message=False,
+    )
+    screenshot_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(screenshot_prompt, pattern="^send_screenshot$")],
+        states={
+            WAITING_SCREENSHOT: [
+                MessageHandler(filters.PHOTO, receive_screenshot),
+                CallbackQueryHandler(cancel_conv, pattern="^cancel_conv$"),
+            ]
+        },
+        fallbacks=[CallbackQueryHandler(cancel_conv, pattern="^cancel_conv$")],
         per_message=False,
     )
     admin_conv = ConversationHandler(
@@ -1012,7 +1060,7 @@ def main():
             WAITING_ADMIN_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_user_action)],
             WAITING_ADMIN_COUPON: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_coupon_action)],
         },
-        fallbacks=[],
+        fallbacks=[CallbackQueryHandler(cancel_conv, pattern="^cancel_conv$")],
         per_message=False,
     )
 
