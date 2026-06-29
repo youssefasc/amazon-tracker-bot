@@ -34,16 +34,16 @@ def fp(price: float) -> str:
 # ── Main Menu ─────────────────────────────────────────────────────────────────
 def main_menu_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ إضافة تتبع سعر", callback_data="menu_add"),
+        [InlineKeyboardButton("➕ إضافة تتبع سعر جديد", callback_data="menu_add"),
          InlineKeyboardButton("📦 منتجاتي", callback_data="menu_products")],
-        [InlineKeyboardButton("🔍 بحث عن منتج", callback_data="menu_search"),
+        [InlineKeyboardButton("🔍 بحث عن منتج أمازون", callback_data="menu_search"),
          InlineKeyboardButton("📊 إحصائياتي", callback_data="menu_stats")],
         [InlineKeyboardButton("👤 حسابي", callback_data="menu_account"),
          InlineKeyboardButton("💎 الباقات", callback_data="menu_plans")],
         [InlineKeyboardButton("🎁 شارك واربح", callback_data="menu_share"),
-         InlineKeyboardButton("🎫 كوبون", callback_data="menu_coupon")],
-        [InlineKeyboardButton("❓ المساعدة", callback_data="menu_help"),
-         InlineKeyboardButton("📢 عروض متتفوتش", url=CHANNEL_LINK)],
+         InlineKeyboardButton("🎫 استخدام كوبون", callback_data="menu_coupon")],
+        [InlineKeyboardButton("📢 قناة العروض", url=CHANNEL_LINK),
+         InlineKeyboardButton("❓ المساعدة", callback_data="menu_help")],
     ])
 
 
