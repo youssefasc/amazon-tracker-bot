@@ -276,23 +276,61 @@ async def get_product_screenshot(asin: str) -> bytes | None:
         return None
 
 
-async def get_deals_from_amazon() -> list[dict]:
-    """Scrape Amazon Egypt for discounted products, ordered by category priority"""
-    # الأولوية: إلكترونيات → كهربائية → ملابس → عام
-    deal_urls = [
-        # 1) إلكترونيات (موبايلات، لابتوب، إلخ)
+CATEGORY_URLS = {
+    "electronics": [
         "https://www.amazon.eg/s?k=mobile+phones&i=electronics",
         "https://www.amazon.eg/s?k=laptop&i=electronics",
+        "https://www.amazon.eg/s?k=headphones&i=electronics",
         "https://www.amazon.eg/s?k=electronics",
-        # 2) أجهزة كهربائية
+    ],
+    "appliances": [
         "https://www.amazon.eg/s?k=home+appliances",
         "https://www.amazon.eg/s?k=kitchen+appliances",
-        # 3) ملابس
+        "https://www.amazon.eg/s?k=air+conditioner",
+    ],
+    "fashion": [
         "https://www.amazon.eg/s?k=fashion+clothing",
         "https://www.amazon.eg/s?k=clothes",
-        # 4) عام
+        "https://www.amazon.eg/s?k=shoes",
+    ],
+    "grocery": [
+        "https://www.amazon.eg/s?k=grocery",
+        "https://www.amazon.eg/s?k=snacks",
+    ],
+    "general": [
         "https://www.amazon.eg/s?k=deals",
-    ]
+        "https://www.amazon.eg/s?k=offers",
+        "https://www.amazon.eg/s?k=best+sellers",
+        "https://www.amazon.eg/s?k=toys",
+        "https://www.amazon.eg/s?k=beauty",
+        "https://www.amazon.eg/s?k=sports",
+    ],
+}
+
+# ترتيب الفئات والعدد المطلوب من كل فئة قبل الانتقال للي بعدها
+CATEGORY_ROTATION = (
+    [("electronics", 5)] +
+    [("appliances", 5)] +
+    [("fashion", 5)] +
+    [("grocery", 5)] +
+    [("general", 100)]
+)
+
+
+async def get_deals_from_amazon(category: str = None) -> list[dict]:
+    """Scrape Amazon Egypt for discounted products. If category given, search it;
+    otherwise search all categories as fallback."""
+    if category and category in CATEGORY_URLS:
+        deal_urls = list(CATEGORY_URLS[category])
+        # أضف باقي الفئات كـ fallback لو القسم المطلوب مفهوش عروض
+        for cat, urls in CATEGORY_URLS.items():
+            if cat != category:
+                deal_urls.extend(urls)
+    else:
+        # كل الفئات
+        deal_urls = []
+        for urls in CATEGORY_URLS.values():
+            deal_urls.extend(urls)
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
@@ -366,7 +404,7 @@ async def get_deals_from_amazon() -> list[dict]:
 
                             # لازم يكون عليه خصم
                             # لازم الخصم 30% أو أكتر
-                            if not discount_pct or discount_pct < 30:
+                            if not discount_pct or discount_pct < 25:
                                 continue
 
                             img_el = await item.query_selector("img.s-image, img")
@@ -390,3 +428,4 @@ async def get_deals_from_amazon() -> list[dict]:
     except Exception as e:
         print(f"Deals error: {e}")
         return []
+
