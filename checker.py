@@ -100,7 +100,7 @@ async def check_all_prices(bot: Bot):
                     print(f"Alert user error: {e}")
                 # Post to channel
                 ch_msg = (
-                    f"🔥 <b>انخفاض سعر على أمازون مصر!</b>\n\n"
+                    f"عرض ميتفوتش 🔥⚡️\n\n"
                     f"🛍 {product['title']}\n\n"
                     f"💰 كان: <s>{fp(old_price)}</s>\n"
                     f"✅ بقى: <b>{fp(new_price)}</b>\n"
@@ -166,7 +166,7 @@ async def post_deals_to_channel(bot: Bot):
                 orig = f"<s>{fp(deal['original_price'])}</s> → " if deal.get("original_price") else ""
                 pct = f"🏷 خصم <b>{deal['discount_pct']}%</b>\n" if deal.get("discount_pct") else ""
                 msg = (
-                    f"⚡ <b>عرض على أمازون مصر!</b>\n\n"
+                    f"عرض ميتفوتش 🔥⚡️\n\n"
                     f"🛍 {deal['title']}\n\n"
                     f"{pct}"
                     f"💰 {orig}<b>{fp(deal['price'])}</b>\n\n"
