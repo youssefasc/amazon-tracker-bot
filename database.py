@@ -420,3 +420,32 @@ async def cleanup_old_deals(hours: int = 48):
             (f"-{hours} hours",)
         )
         await db.commit()
+
+
+# ── Deal rotation counter ───────────────────────────────────────────────────────
+async def get_rotation_state() -> int:
+    """Get the current rotation counter (how many deals posted in this cycle)"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("CREATE TABLE IF NOT EXISTS bot_state (key TEXT PRIMARY KEY, value INTEGER)")
+        await db.commit()
+        async with db.execute("SELECT value FROM bot_state WHERE key='rotation'") as cur:
+            row = await cur.fetchone()
+            return row[0] if row else 0
+
+
+async def set_rotation_state(value: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("CREATE TABLE IF NOT EXISTS bot_state (key TEXT PRIMARY KEY, value INTEGER)")
+        await db.execute(
+            "INSERT OR REPLACE INTO bot_state (key, value) VALUES ('rotation', ?)", (value,)
+        )
+        await db.commit()
+
+
+async def reset_alerted_price(product_id: int):
+    """Clear last_alerted_price so a test alert can fire"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE products SET last_alerted_price=NULL WHERE id=?", (product_id,)
+        )
+        await db.commit()
