@@ -77,7 +77,6 @@ async def check_all_prices(bot: Bot):
                 drop = old_price - new_price
                 drop_pct = drop / old_price * 100
                 affiliate_link = aff_url(product["asin"])
-                short_link = await shorten_url(affiliate_link)
                 # Alert user (private)
                 user_msg = (
                     f"📉 <b>انخفض السعر!</b>\n\n"
@@ -85,8 +84,7 @@ async def check_all_prices(bot: Bot):
                     f"💰 كان: <s>{fp(old_price)}</s>\n"
                     f"✅ بقى: <b>{fp(new_price)}</b>\n"
                     f"📊 خصم: <b>{drop_pct:.1f}% (وفّرت {fp(drop)})</b>\n\n"
-                    f"🔗 <a href='{affiliate_link}'>اشتري دلوقتي</a>\n"
-                    f"{short_link}"
+                    f"🛒 <a href='{affiliate_link}'>اشتري دلوقتي</a>"
                 )
                 try:
                     if product["image_url"]:
@@ -105,8 +103,7 @@ async def check_all_prices(bot: Bot):
                     f"💰 كان: <s>{fp(old_price)}</s>\n"
                     f"✅ بقى: <b>{fp(new_price)}</b>\n"
                     f"📊 خصم: <b>{drop_pct:.1f}%</b>\n\n"
-                    f"🛒 <a href='{affiliate_link}'>اشتري دلوقتي</a>\n"
-                    f"{short_link}"
+                    f"🛒 <a href='{affiliate_link}'>اشتري دلوقتي</a>"
                 )
                 try:
                     if product["image_url"]:
@@ -162,8 +159,7 @@ async def post_deals_to_channel(bot: Bot):
                 f"🛍 {deal['title']}\n\n"
                 f"{pct}"
                 f"💰 {orig}<b>{fp(deal['price'])}</b>\n\n"
-                f"🛒 <a href='{affiliate_link}'>اشتري دلوقتي</a>\n"
-                f"{short_link}"
+                f"🛒 <a href='{affiliate_link}'>اشتري دلوقتي</a>"
             )
             if deal.get("image_url"):
                 await bot.send_photo(chat_id=CHANNEL_ID, photo=deal["image_url"],
