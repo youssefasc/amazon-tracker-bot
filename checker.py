@@ -193,4 +193,3 @@ async def post_deals_to_channel(bot: Bot):
                 continue
 
         print("No new deals to post.")
-
