@@ -49,20 +49,29 @@ def fp(price: float) -> str:
 
 def should_alert(product, new_price: float) -> bool:
     old = product["current_price"]
+
+    # لازم السعر ينزل عن السعر الحالي
     if new_price >= old:
         return False
+
+    # لو فيه سعر تم التنبيه عليه قبل كده — لازم السعر الجديد يكون أقل منه
+    # (يمنع تكرار التنبيه لنفس السعر)
+    try:
+        last_alerted = product["last_alerted_price"]
+    except (KeyError, IndexError):
+        last_alerted = None
+    if last_alerted is not None and new_price >= last_alerted:
+        return False
+
+    # شرط السعر المستهدف
     if product["target_price"] and new_price > product["target_price"]:
         return False
+
+    # شرط نسبة الخصم
     if product["target_percent"]:
         if ((old - new_price) / old * 100) < product["target_percent"]:
             return False
-    if product["last_alert_at"]:
-        try:
-            last = datetime.fromisoformat(product["last_alert_at"])
-            if datetime.now() - last < timedelta(minutes=ALERT_COOLDOWN_MINUTES):
-                return False
-        except:
-            pass
+
     return True
 
 
@@ -117,7 +126,7 @@ async def check_all_prices(bot: Bot):
                                                reply_markup=channel_buttons(affiliate_link))
                 except TelegramError as e:
                     print(f"Channel post error: {e}")
-                await update_product_alert_time(product["id"])
+                await update_product_alert_time(product["id"], new_price)
             await update_product_price(product["id"], new_price)
             await asyncio.sleep(3)
         except Exception as e:
@@ -125,7 +134,7 @@ async def check_all_prices(bot: Bot):
     print("Price check done.")
 
 
-async def post_deals_to_channel(bot: Bot):
+async def post_deals_to_channel(bot: Bot, force: bool = False):
     """Scrape deals and post to channel — one deal per run, DB-backed 48h dedup"""
     global _last_deal_post
 
@@ -137,8 +146,8 @@ async def post_deals_to_channel(bot: Bot):
     async with _deals_lock:
         now = datetime.now()
 
-        # امنع التشغيل لو آخر نشر كان من أقل من 4 دقايق
-        if _last_deal_post and (now - _last_deal_post) < timedelta(minutes=4):
+        # امنع التشغيل لو آخر نشر كان من أقل من 4 دقايق (إلا لو force)
+        if not force and _last_deal_post and (now - _last_deal_post) < timedelta(minutes=4):
             print(f"Last post was {(now - _last_deal_post).seconds}s ago, skipping")
             return
 
