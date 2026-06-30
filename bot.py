@@ -1044,17 +1044,23 @@ async def debug_url(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 # ── STARTUP ───────────────────────────────────────────────────────────────────
+async def heartbeat():
+    print(f"💓 alive at {datetime.now().strftime('%H:%M:%S')}")
+
+
 async def post_init(app: Application):
     await init_db()
     scheduler = AsyncIOScheduler()
+    scheduler.add_job(heartbeat, "interval", minutes=1, id="heartbeat",
+                      max_instances=1, coalesce=True)
     scheduler.add_job(check_all_prices, "interval",
                       minutes=CHECK_INTERVAL_MINUTES, args=[app.bot],
-                      max_instances=1, coalesce=True)
+                      max_instances=1, coalesce=True, misfire_grace_time=120)
     scheduler.add_job(post_deals_to_channel, "interval",
                       minutes=5, args=[app.bot],
                       next_run_time=datetime.now() + timedelta(minutes=1),
                       max_instances=1, coalesce=True, id="deals_job",
-                      replace_existing=True)
+                      replace_existing=True, misfire_grace_time=120)
     scheduler.start()
     print("✅ Scheduler started")
 
