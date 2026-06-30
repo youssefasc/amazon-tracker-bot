@@ -221,8 +221,8 @@ async def search_amazon(query: str) -> list[dict]:
         return []
 
 
-async def get_product_screenshot(asin: str) -> bytes | None:
-    """Take a screenshot of the product page"""
+async def get_product_screenshot(asin: str) -> dict | None:
+    """Take a screenshot + check if sold by Amazon. Returns {screenshot, sold_by_amazon}"""
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
@@ -240,7 +240,6 @@ async def get_product_screenshot(asin: str) -> bytes | None:
                 btn = await page.query_selector("input[type='submit'], button[type='submit'], .a-button-input")
                 if btn:
                     await btn.click()
-                    # استنى لحد ما المنتج يظهر فعلاً
                     for _ in range(10):
                         await asyncio.sleep(1)
                         title_el = await page.query_selector("#productTitle")
@@ -249,15 +248,35 @@ async def get_product_screenshot(asin: str) -> bytes | None:
             except:
                 pass
 
-            # تأكد إن صفحة المنتج ظهرت (مش صفحة الـ bot check)
             try:
                 await page.wait_for_selector("#productTitle", timeout=10000)
             except:
-                # لو مفيش productTitle يبقى لسه على صفحة bot check — مينفعش screenshot
                 await browser.close()
                 return None
 
-            await asyncio.sleep(2)  # استنى الصور تحمّل
+            await asyncio.sleep(2)
+
+            # تحقق: هل البيع من أمازون؟
+            sold_by_amazon = False
+            try:
+                # ابحث عن البائع في عدة أماكن
+                seller_selectors = [
+                    "#sellerProfileTriggerId",
+                    "#merchant-info",
+                    "[offer-display-feature-name='desktop-merchant-info']",
+                    "#tabular-buybox",
+                ]
+                page_text = ""
+                for sel in seller_selectors:
+                    el = await page.query_selector(sel)
+                    if el:
+                        page_text += (await el.inner_text()) + " "
+                # كلمات تدل إن البائع أمازون
+                amazon_keywords = ["Amazon", "أمازون", "amazon.eg", "Amazon.eg"]
+                if any(k in page_text for k in amazon_keywords):
+                    sold_by_amazon = True
+            except:
+                pass
 
             # اقفل أي popups
             try:
@@ -270,7 +289,7 @@ async def get_product_screenshot(asin: str) -> bytes | None:
 
             screenshot = await page.screenshot(clip={"x": 0, "y": 0, "width": 1280, "height": 700})
             await browser.close()
-            return screenshot
+            return {"screenshot": screenshot, "sold_by_amazon": sold_by_amazon}
     except Exception as e:
         print(f"Screenshot error: {e}")
         return None
