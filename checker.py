@@ -7,7 +7,8 @@ from telegram.error import TelegramError
 from config import BOT_TOKEN, CHANNEL_ID, ALERT_COOLDOWN_MINUTES, AFFILIATE_TAG, CHANNEL_LINK
 from database import (get_all_active_products, update_product_price, update_product_alert_time,
                       was_deal_posted, mark_deal_posted, cleanup_old_deals,
-                      get_rotation_state, set_rotation_state)
+                      get_rotation_state, set_rotation_state,
+                      get_last_deal_post_time, set_last_deal_post_time)
 from scraper import (get_current_price, get_deals_from_amazon, get_product_screenshot,
                      CATEGORY_ROTATION)
 
@@ -160,10 +161,17 @@ async def post_deals_to_channel(bot: Bot, force: bool = False):
     async with _deals_lock:
         now = datetime.now()
 
-        # امنع التشغيل لو آخر نشر كان من أقل من 4 دقايق (إلا لو force)
-        if not force and _last_deal_post and (now - _last_deal_post) < timedelta(minutes=4):
-            print(f"Last post was {(now - _last_deal_post).seconds}s ago, skipping")
-            return
+        # امنع التشغيل لو آخر نشر كان من أقل من 4.5 دقيقة (من الـ database — يصمد بعد restart)
+        if not force:
+            last_post_str = await get_last_deal_post_time()
+            if last_post_str:
+                try:
+                    last_post = datetime.fromisoformat(last_post_str)
+                    if (now - last_post) < timedelta(minutes=4, seconds=30):
+                        print(f"Last post was {(now - last_post).seconds}s ago, skipping")
+                        return
+                except:
+                    pass
 
         # نضّف العروض القديمة (أكتر من 48 ساعة)
         await cleanup_old_deals(ASIN_COOLDOWN_HOURS)
@@ -221,6 +229,7 @@ async def post_deals_to_channel(bot: Bot, force: bool = False):
                 # سجّله في الـ database، زوّد العداد، ووقف بعد منتج واحد
                 await mark_deal_posted(asin)
                 await set_rotation_state((counter + 1) % cycle_len)
+                await set_last_deal_post_time(now.isoformat())
                 _last_deal_post = now
                 print(f"Posted 1 deal: {asin} (category={category})")
                 return
