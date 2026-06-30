@@ -300,6 +300,7 @@ async def get_deals_from_amazon() -> list[dict]:
             )
             page = await context.new_page()
             deals = []
+            debug_info = ""
 
             for deal_url in deal_urls:
                 if len(deals) >= 6:
@@ -317,6 +318,8 @@ async def get_deals_from_amazon() -> list[dict]:
 
                     items = await page.query_selector_all("[data-component-type='s-search-result']")
                     print(f"Deals: {deal_url[:40]} → {len(items)} items")
+                    cat = deal_url.split("k=")[1].split("&")[0][:15]
+                    debug_info += f"{cat}: {len(items)} منتج\n"
 
                     for item in items[:15]:
                         if len(deals) >= 8:
@@ -350,18 +353,29 @@ async def get_deals_from_amazon() -> list[dict]:
                             original_price = float(orig_clean) if orig_clean else None
 
                             discount_pct = None
+                            # طريقة 1: من السعر المشطوب
                             if original_price and original_price > price:
                                 discount_pct = int((original_price - price) / original_price * 100)
-                            else:
-                                # Look for discount badge
-                                badge = await item.query_selector("span.a-badge-text, [class*='savingPercentage'], [class*='discount']")
-                                if badge:
-                                    txt = (await badge.inner_text()).strip()
-                                    m = re.search(r"(\d+)", txt)
-                                    if m:
-                                        discount_pct = int(m.group(1))
+                            # طريقة 2: من badge الخصم
+                            if not discount_pct:
+                                for badge_sel in [
+                                    "span.a-badge-text",
+                                    "[class*='savingsPercentage']",
+                                    "[class*='discount']",
+                                    ".a-row.a-size-base.a-color-secondary",
+                                    "span.a-letter-space + span",
+                                ]:
+                                    try:
+                                        badge = await item.query_selector(badge_sel)
+                                        if badge:
+                                            txt = (await badge.inner_text()).strip()
+                                            m = re.search(r"(\d+)\s*%", txt)
+                                            if m:
+                                                discount_pct = int(m.group(1))
+                                                break
+                                    except:
+                                        pass
 
-                            # لازم يكون عليه خصم
                             # لازم الخصم 30% أو أكتر
                             if not discount_pct or discount_pct < 30:
                                 continue
@@ -383,7 +397,13 @@ async def get_deals_from_amazon() -> list[dict]:
 
             await browser.close()
             print(f"Found {len(deals)} deals")
+            # احفظ آخر تشخيص في متغير عام
+            global _last_deals_debug
+            _last_deals_debug = debug_info
             return deals
     except Exception as e:
         print(f"Deals error: {e}")
         return []
+
+
+_last_deals_debug = ""
