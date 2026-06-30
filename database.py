@@ -80,6 +80,12 @@ async def init_db():
                 used_at TEXT DEFAULT (datetime('now'))
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS posted_deals (
+                asin TEXT PRIMARY KEY,
+                posted_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
         await db.commit()
 
 
@@ -362,3 +368,40 @@ async def get_all_coupons():
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM coupons ORDER BY created_at DESC") as cur:
             return await cur.fetchall()
+
+
+# ── Posted Deals (48h dedup) ────────────────────────────────────────────────────
+async def was_deal_posted(asin: str, hours: int = 48) -> bool:
+    """Check if ASIN was posted within the last X hours"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT posted_at FROM posted_deals WHERE asin = ?", (asin,)
+        ) as cur:
+            row = await cur.fetchone()
+            if not row:
+                return False
+            try:
+                posted = datetime.fromisoformat(row[0])
+                return (datetime.now() - posted) < timedelta(hours=hours)
+            except:
+                return True
+
+
+async def mark_deal_posted(asin: str):
+    """Record that an ASIN was posted now"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO posted_deals (asin, posted_at) VALUES (?, datetime('now'))",
+            (asin,)
+        )
+        await db.commit()
+
+
+async def cleanup_old_deals(hours: int = 48):
+    """Remove deals older than X hours"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "DELETE FROM posted_deals WHERE posted_at < datetime('now', ?)",
+            (f"-{hours} hours",)
+        )
+        await db.commit()
