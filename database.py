@@ -449,3 +449,23 @@ async def reset_alerted_price(product_id: int):
             "UPDATE products SET last_alerted_price=NULL WHERE id=?", (product_id,)
         )
         await db.commit()
+
+
+# ── Last deal post time (persistent across restarts) ────────────────────────────
+async def get_last_deal_post_time():
+    """Get the timestamp of the last deal posted (ISO string) or None"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("CREATE TABLE IF NOT EXISTS bot_meta (key TEXT PRIMARY KEY, value TEXT)")
+        await db.commit()
+        async with db.execute("SELECT value FROM bot_meta WHERE key='last_deal_post'") as cur:
+            row = await cur.fetchone()
+            return row[0] if row else None
+
+
+async def set_last_deal_post_time(iso_time: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("CREATE TABLE IF NOT EXISTS bot_meta (key TEXT PRIMARY KEY, value TEXT)")
+        await db.execute(
+            "INSERT OR REPLACE INTO bot_meta (key, value) VALUES ('last_deal_post', ?)", (iso_time,)
+        )
+        await db.commit()
