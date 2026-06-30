@@ -875,20 +875,39 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("✅ تم فحص الأسعار!")
 
     elif data == "admin_test_alert":
-        # ارفع سعر أول منتج بـ 30% وصفّر آخر سعر تم التنبيه عليه
+        # ابعت تنبيه تجريبي مباشر بدون ما نلمس السعر المخزّن
         products = await get_all_active_products()
         if not products:
             await query.message.reply_text("❌ مفيش منتجات متابَعة!")
             return
         p = products[0]
-        fake_price = p["current_price"] * 1.3
-        await update_product_price(p["id"], fake_price)
-        await reset_alerted_price(p["id"])
+        from checker import aff_url, channel_buttons
+        real_price = p["current_price"]
+        demo_old = real_price * 1.2  # سعر "كان" وهمي للعرض بس
+        affiliate_link = aff_url(p["asin"])
+        demo_msg = (
+            f"🧪 <b>[تجربة]</b> هكذا يظهر التنبيه:\n\n"
+            f"📉 <b>انخفض السعر!</b>\n\n"
+            f"🛍 {p['title']}\n\n"
+            f"💰 كان: <s>{fp(demo_old)}</s>\n"
+            f"✅ بقى: <b>{fp(real_price)}</b>\n"
+            f"📊 خصم: <b>16.7%</b>\n\n"
+            f"🛒 <a href='{affiliate_link}'>اشتري دلوقتي</a>"
+        )
+        try:
+            if p["image_url"]:
+                await query.message.reply_photo(
+                    photo=p["image_url"], caption=demo_msg, parse_mode=ParseMode.HTML,
+                    reply_markup=channel_buttons(affiliate_link))
+            else:
+                await query.message.reply_text(
+                    demo_msg, parse_mode=ParseMode.HTML,
+                    reply_markup=channel_buttons(affiliate_link))
+        except:
+            await query.message.reply_text(demo_msg, parse_mode=ParseMode.HTML)
         await query.message.reply_text(
-            f"✅ تم رفع سعر:\n<b>{p['title'][:50]}</b>\n\n"
-            f"من {fp(p['current_price'])} → {fp(fake_price)}\n\n"
-            f"دوس <b>🔄 فحص الأسعار الآن</b>",
-            parse_mode=ParseMode.HTML
+            "☝️ ده شكل التنبيه. التنبيه الحقيقي بيتبعت تلقائياً لما السعر ينزل فعلاً.\n"
+            "(مغيّرناش أي سعر مخزّن)"
         )
 
     elif data == "admin_users":
