@@ -5,7 +5,7 @@ CHANNEL_LINK = "https://t.me/offer_egypt"
 AFFILIATE_TAG = "sitestripe02b-21"
 
 FREE_LIMIT = 5
-PREMIUM_PRICE = 120
+PREMIUM_PRICE = 150
 INSTAPAY_LINK = "https://ipn.eg/S/tecma/instapay/9QOBx7"
 
 CHECK_INTERVAL_MINUTES = 5
