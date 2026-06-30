@@ -183,7 +183,8 @@ async def post_deals_to_channel(bot: Bot, force: bool = False):
 
         deals = await get_deals_from_amazon(category)
         if not deals:
-            print("No deals found")
+            print("No deals found — advancing counter")
+            await set_rotation_state((counter + 1) % cycle_len)
             return
 
         for deal in deals:
@@ -233,6 +234,10 @@ async def post_deals_to_channel(bot: Bot, force: bool = False):
                 _last_deal_post = now
                 print(f"Posted 1 deal: {asin} (category={category})")
                 return
+
+        # لو وصلنا هنا يبقى كل المنتجات اتنشرت قبل كده — زوّد العداد عشان ننتقل لفئة تانية
+        print("No new deals to post — advancing counter")
+        await set_rotation_state((counter + 1) % cycle_len)
             except Exception as e:
                 print(f"Deal post error: {e}")
                 continue
