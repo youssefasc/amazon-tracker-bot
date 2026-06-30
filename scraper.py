@@ -390,4 +390,3 @@ async def get_deals_from_amazon() -> list[dict]:
     except Exception as e:
         print(f"Deals error: {e}")
         return []
-
