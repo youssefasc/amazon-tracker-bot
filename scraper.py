@@ -277,13 +277,21 @@ async def get_product_screenshot(asin: str) -> bytes | None:
 
 
 async def get_deals_from_amazon() -> list[dict]:
-    """Scrape Amazon Egypt for products with any discount"""
-    # كلمات بحث شائعة — بنجيب منها المنتجات اللي عليها خصم
+    """Scrape Amazon Egypt for discounted products, ordered by category priority"""
+    # الأولوية: إلكترونيات → كهربائية → ملابس → عام
     deal_urls = [
-        "https://www.amazon.eg/s?k=offers&i=electronics",
+        # 1) إلكترونيات (موبايلات، لابتوب، إلخ)
+        "https://www.amazon.eg/s?k=mobile+phones&i=electronics",
+        "https://www.amazon.eg/s?k=laptop&i=electronics",
+        "https://www.amazon.eg/s?k=electronics",
+        # 2) أجهزة كهربائية
+        "https://www.amazon.eg/s?k=home+appliances",
+        "https://www.amazon.eg/s?k=kitchen+appliances",
+        # 3) ملابس
+        "https://www.amazon.eg/s?k=fashion+clothing",
+        "https://www.amazon.eg/s?k=clothes",
+        # 4) عام
         "https://www.amazon.eg/s?k=deals",
-        "https://www.amazon.eg/s?k=mobile",
-        "https://www.amazon.eg/s?k=home",
     ]
     try:
         async with async_playwright() as p:
@@ -357,7 +365,8 @@ async def get_deals_from_amazon() -> list[dict]:
                                         discount_pct = int(m.group(1))
 
                             # لازم يكون عليه خصم
-                            if not discount_pct or discount_pct < 1:
+                            # لازم الخصم 20% أو أكتر
+                            if not discount_pct or discount_pct < 20:
                                 continue
 
                             img_el = await item.query_selector("img.s-image, img")
