@@ -4,7 +4,7 @@ import urllib.parse
 from datetime import datetime, timedelta
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TelegramError
-from config import BOT_TOKEN, CHANNEL_ID, ALERT_COOLDOWN_MINUTES, AFFILIATE_TAG, CHANNEL_LINK
+from config import BOT_TOKEN, CHANNEL_ID, ALERT_COOLDOWN_MINUTES, AFFILIATE_TAG, CHANNEL_LINK, ADMIN_ID
 from database import (get_all_active_products, update_product_price, update_product_alert_time,
                       was_deal_posted, mark_deal_posted, cleanup_old_deals)
 from scraper import get_current_price, get_deals_from_amazon, get_product_screenshot
@@ -187,13 +187,27 @@ async def post_deals_to_channel(bot: Bot, force: bool = False):
                     f"🛒 <a href='{affiliate_link}'>اشتري دلوقتي</a>"
                 )
                 photo = screenshot or deal.get("image_url")
-                if photo:
-                    await bot.send_photo(chat_id=CHANNEL_ID, photo=photo,
-                                         caption=msg, parse_mode="HTML",
-                                         reply_markup=channel_buttons(affiliate_link))
-                else:
-                    await bot.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode="HTML",
-                                           reply_markup=channel_buttons(affiliate_link))
+                try:
+                    if photo:
+                        await bot.send_photo(chat_id=CHANNEL_ID, photo=photo,
+                                             caption=msg, parse_mode="HTML",
+                                             reply_markup=channel_buttons(affiliate_link))
+                    else:
+                        await bot.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode="HTML",
+                                               reply_markup=channel_buttons(affiliate_link))
+                except Exception as send_err:
+                    # لو فشل النشر بالصورة، جرب بدون صورة
+                    print(f"Photo send failed: {send_err}, trying text only")
+                    try:
+                        await bot.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode="HTML",
+                                               reply_markup=channel_buttons(affiliate_link))
+                    except Exception as txt_err:
+                        # ابعت الخطأ للأدمن
+                        await bot.send_message(
+                            chat_id=ADMIN_ID,
+                            text=f"❌ فشل النشر على القناة:\n\n{txt_err}\n\nCHANNEL_ID: {CHANNEL_ID}"
+                        )
+                        raise
 
                 # سجّله في الـ database ووقف بعد منتج واحد
                 await mark_deal_posted(asin)
