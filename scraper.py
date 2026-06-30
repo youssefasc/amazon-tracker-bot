@@ -222,75 +222,106 @@ async def search_amazon(query: str) -> list[dict]:
 
 
 async def get_deals_from_amazon() -> list[dict]:
-    """Scrape Amazon Egypt deals page for discounted products"""
+    """Scrape Amazon Egypt for products with any discount"""
+    # صفحات بنبحث فيها عن منتجات عليها خصم
+    deal_urls = [
+        "https://www.amazon.eg/deals",
+        "https://www.amazon.eg/s?k=deals&rh=p_n_deal_type%3A26927915031",
+        "https://www.amazon.eg/gp/goldbox",
+    ]
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 locale="ar-EG",
+                extra_http_headers={"Accept-Language": "ar-EG,ar;q=0.9,en;q=0.8"},
             )
             page = await context.new_page()
-            await page.goto("https://www.amazon.eg/deals", wait_until="domcontentloaded", timeout=30000)
-            try:
-                btn = await page.query_selector("input[type='submit'], .a-button-input")
-                if btn:
-                    await btn.click()
-                    await asyncio.sleep(3)
-            except:
-                pass
-            await asyncio.sleep(3)
             deals = []
-            items = await page.query_selector_all("[data-testid='deal-card'], .a-section.octopus-dlp-asin-section")
-            if not items:
-                items = await page.query_selector_all("[data-component-type='s-search-result']")
-            for item in items[:8]:
+
+            for deal_url in deal_urls:
+                if len(deals) >= 8:
+                    break
                 try:
-                    asin = await item.get_attribute("data-asin") or ""
-                    if not asin:
-                        link = await item.query_selector("a[href*='/dp/']")
-                        if link:
-                            href = await link.get_attribute("href") or ""
-                            asin = extract_asin(href) or ""
-                    if not asin:
-                        continue
-                    title_el = await item.query_selector("h2 span, .a-text-normal, [data-testid='product-title']")
-                    title = (await title_el.inner_text()).strip() if title_el else ""
-                    if not title:
-                        continue
-                    price_el = await item.query_selector("span.a-price-whole, .a-price .a-offscreen")
-                    price_raw = (await price_el.inner_text()).strip() if price_el else ""
-                    price_clean = re.sub(r"[^\d.]", "", price_raw.replace(",", ""))
-                    price = float(price_clean) if price_clean else None
-                    if not price:
-                        continue
-                    orig_el = await item.query_selector("span.a-price.a-text-price .a-offscreen, .a-text-strike")
-                    orig_raw = (await orig_el.inner_text()).strip() if orig_el else ""
-                    orig_clean = re.sub(r"[^\d.]", "", orig_raw.replace(",", ""))
-                    original_price = float(orig_clean) if orig_clean else None
-                    discount_pct = None
-                    if original_price and original_price > price:
-                        discount_pct = int((original_price - price) / original_price * 100)
-                    else:
-                        pct_el = await item.query_selector(".a-badge-text, .savingsPercentage")
-                        if pct_el:
-                            txt = (await pct_el.inner_text()).strip()
-                            m = re.search(r"(\d+)", txt)
-                            if m:
-                                discount_pct = int(m.group(1))
-                    if not discount_pct or discount_pct < 10:
-                        continue
-                    img_el = await item.query_selector("img")
-                    image_url = await img_el.get_attribute("src") or "" if img_el else ""
-                    deals.append({
-                        "asin": asin, "title": title[:200], "price": price,
-                        "original_price": original_price, "discount_pct": discount_pct,
-                        "image_url": image_url,
-                        "affiliate_url": make_affiliate_url(asin),
-                    })
-                except:
+                    await page.goto(deal_url, wait_until="domcontentloaded", timeout=30000)
+                    try:
+                        btn = await page.query_selector("input[type='submit'], .a-button-input")
+                        if btn:
+                            await btn.click()
+                            await asyncio.sleep(3)
+                    except:
+                        pass
+                    await asyncio.sleep(3)
+
+                    items = await page.query_selector_all("[data-component-type='s-search-result']")
+                    if not items:
+                        items = await page.query_selector_all("[data-testid='deal-card'], div[class*='DealCard']")
+
+                    for item in items[:15]:
+                        if len(deals) >= 8:
+                            break
+                        try:
+                            asin = await item.get_attribute("data-asin") or ""
+                            if not asin:
+                                link = await item.query_selector("a[href*='/dp/']")
+                                if link:
+                                    href = await link.get_attribute("href") or ""
+                                    asin = extract_asin(href) or ""
+                            if not asin or any(d["asin"] == asin for d in deals):
+                                continue
+
+                            title_el = await item.query_selector("h2 span, h2 a span, .a-text-normal")
+                            title = (await title_el.inner_text()).strip() if title_el else ""
+                            if not title:
+                                continue
+
+                            price_el = await item.query_selector("span.a-price span.a-offscreen, span.a-price-whole")
+                            price_raw = (await price_el.inner_text()).strip() if price_el else ""
+                            price_clean = re.sub(r"[^\d.]", "", price_raw.replace(",", ""))
+                            price = float(price_clean) if price_clean else None
+                            if not price:
+                                continue
+
+                            # Original price (strikethrough)
+                            orig_el = await item.query_selector("span.a-price.a-text-price span.a-offscreen")
+                            orig_raw = (await orig_el.inner_text()).strip() if orig_el else ""
+                            orig_clean = re.sub(r"[^\d.]", "", orig_raw.replace(",", ""))
+                            original_price = float(orig_clean) if orig_clean else None
+
+                            discount_pct = None
+                            if original_price and original_price > price:
+                                discount_pct = int((original_price - price) / original_price * 100)
+                            else:
+                                # Look for discount badge
+                                badge = await item.query_selector("span.a-badge-text, [class*='savingPercentage'], [class*='discount']")
+                                if badge:
+                                    txt = (await badge.inner_text()).strip()
+                                    m = re.search(r"(\d+)", txt)
+                                    if m:
+                                        discount_pct = int(m.group(1))
+
+                            # لازم يكون عليه خصم
+                            if not discount_pct or discount_pct < 1:
+                                continue
+
+                            img_el = await item.query_selector("img.s-image, img")
+                            image_url = (await img_el.get_attribute("src") or "") if img_el else ""
+
+                            deals.append({
+                                "asin": asin, "title": title[:200], "price": price,
+                                "original_price": original_price, "discount_pct": discount_pct,
+                                "image_url": image_url,
+                                "affiliate_url": make_affiliate_url(asin),
+                            })
+                        except:
+                            continue
+                except Exception as e:
+                    print(f"Deal URL error ({deal_url[:40]}): {e}")
                     continue
+
             await browser.close()
+            print(f"Found {len(deals)} deals")
             return deals
     except Exception as e:
         print(f"Deals error: {e}")
