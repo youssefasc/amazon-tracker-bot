@@ -1,5 +1,6 @@
 import re
 import asyncio
+import random
 from playwright.async_api import async_playwright
 from config import AFFILIATE_TAG
 
@@ -322,15 +323,20 @@ async def get_deals_from_amazon(category: str = None) -> list[dict]:
     otherwise search all categories as fallback."""
     if category and category in CATEGORY_URLS:
         deal_urls = list(CATEGORY_URLS[category])
+        random.shuffle(deal_urls)
         # أضف باقي الفئات كـ fallback لو القسم المطلوب مفهوش عروض
+        other_urls = []
         for cat, urls in CATEGORY_URLS.items():
             if cat != category:
-                deal_urls.extend(urls)
+                other_urls.extend(urls)
+        random.shuffle(other_urls)
+        deal_urls.extend(other_urls)
     else:
         # كل الفئات
         deal_urls = []
         for urls in CATEGORY_URLS.values():
             deal_urls.extend(urls)
+        random.shuffle(deal_urls)
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
@@ -343,7 +349,7 @@ async def get_deals_from_amazon(category: str = None) -> list[dict]:
             deals = []
 
             for deal_url in deal_urls:
-                if len(deals) >= 6:
+                if len(deals) >= 15:
                     break
                 try:
                     await page.goto(deal_url, wait_until="domcontentloaded", timeout=30000)
@@ -360,7 +366,7 @@ async def get_deals_from_amazon(category: str = None) -> list[dict]:
                     print(f"Deals: {deal_url[:40]} → {len(items)} items")
 
                     for item in items[:15]:
-                        if len(deals) >= 8:
+                        if len(deals) >= 15:
                             break
                         try:
                             asin = await item.get_attribute("data-asin") or ""
@@ -423,6 +429,7 @@ async def get_deals_from_amazon(category: str = None) -> list[dict]:
                     continue
 
             await browser.close()
+            random.shuffle(deals)
             print(f"Found {len(deals)} deals")
             return deals
     except Exception as e:
