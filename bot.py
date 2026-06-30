@@ -865,23 +865,9 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return WAITING_BROADCAST
 
     elif data == "admin_post_deals":
-        await query.message.reply_text("⏳ بجيب العروض من أمازون...")
-        from scraper import get_deals_from_amazon
-        deals = await get_deals_from_amazon()
-        await query.message.reply_text(
-            f"🔍 لقيت <b>{len(deals)}</b> عرض من أمازون (خصم 30%+)\n\n"
-            + ("\n".join([f"• {d['title'][:40]} — خصم {d.get('discount_pct','?')}%" for d in deals[:5]])
-               if deals else "❌ مفيش عروض بالفلتر الحالي"),
-            parse_mode=ParseMode.HTML
-        )
-        if deals:
-            await post_deals_to_channel(ctx.bot, force=True)
-            await query.message.reply_text("✅ تم النشر على القناة!")
-        else:
-            await query.message.reply_text(
-                "⚠️ مفيش منتجات بخصم 30%+ دلوقتي.\n"
-                "ممكن نقلل النسبة لو عايز."
-            )
+        await query.message.reply_text("⏳ بينزل العروض...")
+        await post_deals_to_channel(ctx.bot)
+        await query.message.reply_text("✅ تم!")
 
     elif data == "admin_check_prices":
         await query.message.reply_text("⏳ بيفحص الأسعار...")
@@ -1065,18 +1051,11 @@ async def post_init(app: Application):
                       max_instances=1, coalesce=True)
     scheduler.add_job(post_deals_to_channel, "interval",
                       minutes=5, args=[app.bot],
-                      next_run_time=datetime.now() + timedelta(seconds=30),
+                      next_run_time=datetime.now() + timedelta(minutes=1),
                       max_instances=1, coalesce=True, id="deals_job",
                       replace_existing=True)
     scheduler.start()
     print("✅ Scheduler started")
-    try:
-        await app.bot.send_message(
-            chat_id=ADMIN_ID,
-            text="✅ البوت اشتغل والـ scheduler بدأ\nأول عرض هينزل خلال 30 ثانية، وبعدين كل 5 دقايق"
-        )
-    except:
-        pass
 
 
 def main():
@@ -1188,3 +1167,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
