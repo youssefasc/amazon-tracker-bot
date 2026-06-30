@@ -1051,16 +1051,20 @@ async def heartbeat():
 async def post_init(app: Application):
     await init_db()
     scheduler = AsyncIOScheduler()
+    # heartbeat كل دقيقة عشان الـ container يفضل صاحي + نتأكد الـ scheduler حي
     scheduler.add_job(heartbeat, "interval", minutes=1, id="heartbeat",
                       max_instances=1, coalesce=True)
+    # فحص الأسعار كل 5 دقايق
     scheduler.add_job(check_all_prices, "interval",
                       minutes=CHECK_INTERVAL_MINUTES, args=[app.bot],
-                      max_instances=1, coalesce=True, misfire_grace_time=120)
+                      max_instances=1, coalesce=True, misfire_grace_time=60)
+    # نشر العروض كل 5 دقايق — coalesce=True يمنع تجميع الـ runs الفائتة
+    # (لو فات أكتر من run، ينفّذ واحد بس مش كله دفعة)
     scheduler.add_job(post_deals_to_channel, "interval",
                       minutes=5, args=[app.bot],
-                      next_run_time=datetime.now() + timedelta(minutes=1),
+                      next_run_time=datetime.now() + timedelta(seconds=45),
                       max_instances=1, coalesce=True, id="deals_job",
-                      replace_existing=True, misfire_grace_time=120)
+                      replace_existing=True, misfire_grace_time=60)
     scheduler.start()
     print("✅ Scheduler started")
 
