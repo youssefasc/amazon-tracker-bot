@@ -25,6 +25,7 @@ WAITING_COUPON = 6
 WAITING_FEEDBACK = 7
 WAITING_ADMIN_COUPON = 8
 WAITING_ADMIN_USER = 9
+WAITING_BROADCAST = 10
 
 
 def fp(price: float) -> str:
@@ -797,6 +798,7 @@ async def admin_panel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("✅ تفعيل باقة", callback_data="admin_activate"),
          InlineKeyboardButton("❌ إلغاء باقة", callback_data="admin_revoke")],
         [InlineKeyboardButton("🎫 إنشاء كوبون", callback_data="admin_coupon")],
+        [InlineKeyboardButton("📣 برودكاست", callback_data="admin_broadcast")],
         [InlineKeyboardButton("⚡ نشر عروض الآن", callback_data="admin_post_deals")],
         [InlineKeyboardButton("🔄 فحص الأسعار الآن", callback_data="admin_check_prices")],
         [InlineKeyboardButton("🧪 تجربة تنبيه سعر", callback_data="admin_test_alert")],
@@ -854,6 +856,13 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML
         )
         return WAITING_ADMIN_COUPON
+
+    elif data == "admin_broadcast":
+        await query.message.reply_text(
+            "📣 اكتب الرسالة اللي عايز تبعتها لكل المستخدمين:\n\n"
+            "(ممكن تبعت نص أو صورة مع كابشن)"
+        )
+        return WAITING_BROADCAST
 
     elif data == "admin_post_deals":
         await query.message.reply_text("⏳ بينزل العروض...")
@@ -937,6 +946,40 @@ async def admin_coupon_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 # ── DEBUG ─────────────────────────────────────────────────────────────────────
+async def receive_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return ConversationHandler.END
+    users = await get_all_users()
+    msg = update.effective_message
+    sent = 0
+    failed = 0
+    status = await msg.reply_text(f"📤 جاري الإرسال لـ {len(users)} مستخدم...")
+
+    for u in users:
+        try:
+            if msg.photo:
+                await ctx.bot.send_photo(
+                    chat_id=u["user_id"], photo=msg.photo[-1].file_id,
+                    caption=msg.caption or "", parse_mode=ParseMode.HTML
+                )
+            else:
+                await ctx.bot.send_message(
+                    chat_id=u["user_id"], text=msg.text, parse_mode=ParseMode.HTML
+                )
+            sent += 1
+            await asyncio.sleep(0.05)
+        except Exception:
+            failed += 1
+
+    await status.edit_text(
+        f"✅ <b>تم البرودكاست!</b>\n\n"
+        f"📨 وصل: {sent}\n"
+        f"❌ فشل: {failed}",
+        parse_mode=ParseMode.HTML
+    )
+    return ConversationHandler.END
+
+
 async def debug_url(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -1094,6 +1137,7 @@ def main():
         states={
             WAITING_ADMIN_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_user_action)],
             WAITING_ADMIN_COUPON: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_coupon_action)],
+            WAITING_BROADCAST: [MessageHandler((filters.TEXT | filters.PHOTO) & ~filters.COMMAND, receive_broadcast)],
         },
         fallbacks=[CallbackQueryHandler(cancel_conv, pattern="^cancel_conv$")],
         per_message=False,
