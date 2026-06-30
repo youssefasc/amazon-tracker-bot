@@ -163,6 +163,15 @@ async def post_deals_to_channel(bot: Bot):
 
             try:
                 affiliate_link = deal["affiliate_url"]
+
+                # خد سكرين شوت + تحقق إن البيع من أمازون
+                shot_data = await get_product_screenshot(asin)
+
+                # لو المنتج مش بيتباع من أمازون → تخطاه
+                if not shot_data or not shot_data.get("sold_by_amazon"):
+                    print(f"Skipping {asin} — not sold by Amazon")
+                    continue
+
                 orig = f"<s>{fp(deal['original_price'])}</s> → " if deal.get("original_price") else ""
                 pct = f"🏷 خصم <b>{deal['discount_pct']}%</b>\n" if deal.get("discount_pct") else ""
                 msg = (
@@ -170,11 +179,10 @@ async def post_deals_to_channel(bot: Bot):
                     f"🛍 {deal['title']}\n\n"
                     f"{pct}"
                     f"💰 {orig}<b>{fp(deal['price'])}</b>\n\n"
+                    f"✅ <b>البيع من أمازون</b>\n\n"
                     f"🛒 <a href='{affiliate_link}'>اشتري دلوقتي</a>"
                 )
-                # خد سكرين شوت من صفحة المنتج
-                screenshot = await get_product_screenshot(asin)
-                photo = screenshot or deal.get("image_url")
+                photo = shot_data.get("screenshot") or deal.get("image_url")
                 if photo:
                     await bot.send_photo(chat_id=CHANNEL_ID, photo=photo,
                                          caption=msg, parse_mode="HTML",
