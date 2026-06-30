@@ -223,11 +223,12 @@ async def search_amazon(query: str) -> list[dict]:
 
 async def get_deals_from_amazon() -> list[dict]:
     """Scrape Amazon Egypt for products with any discount"""
-    # صفحات بنبحث فيها عن منتجات عليها خصم
+    # كلمات بحث شائعة — بنجيب منها المنتجات اللي عليها خصم
     deal_urls = [
-        "https://www.amazon.eg/deals",
-        "https://www.amazon.eg/s?k=deals&rh=p_n_deal_type%3A26927915031",
-        "https://www.amazon.eg/gp/goldbox",
+        "https://www.amazon.eg/s?k=offers&i=electronics",
+        "https://www.amazon.eg/s?k=deals",
+        "https://www.amazon.eg/s?k=mobile",
+        "https://www.amazon.eg/s?k=home",
     ]
     try:
         async with async_playwright() as p:
@@ -241,7 +242,7 @@ async def get_deals_from_amazon() -> list[dict]:
             deals = []
 
             for deal_url in deal_urls:
-                if len(deals) >= 8:
+                if len(deals) >= 6:
                     break
                 try:
                     await page.goto(deal_url, wait_until="domcontentloaded", timeout=30000)
@@ -252,11 +253,10 @@ async def get_deals_from_amazon() -> list[dict]:
                             await asyncio.sleep(3)
                     except:
                         pass
-                    await asyncio.sleep(3)
+                    await asyncio.sleep(2)
 
                     items = await page.query_selector_all("[data-component-type='s-search-result']")
-                    if not items:
-                        items = await page.query_selector_all("[data-testid='deal-card'], div[class*='DealCard']")
+                    print(f"Deals: {deal_url[:40]} → {len(items)} items")
 
                     for item in items[:15]:
                         if len(deals) >= 8:
