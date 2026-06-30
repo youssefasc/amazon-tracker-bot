@@ -138,7 +138,6 @@ async def post_deals_to_channel(bot: Bot, force: bool = False):
     """Scrape deals and post to channel — one deal per run, DB-backed 48h dedup"""
     global _last_deal_post
 
-    # امنع التشغيل المتزامن
     if _deals_lock.locked():
         print("Deals already running, skipping")
         return
@@ -146,12 +145,10 @@ async def post_deals_to_channel(bot: Bot, force: bool = False):
     async with _deals_lock:
         now = datetime.now()
 
-        # امنع التشغيل لو آخر نشر كان من أقل من 4 دقايق (إلا لو force)
         if not force and _last_deal_post and (now - _last_deal_post) < timedelta(minutes=4):
             print(f"Last post was {(now - _last_deal_post).seconds}s ago, skipping")
             return
 
-        # نضّف العروض القديمة (أكتر من 48 ساعة)
         await cleanup_old_deals(ASIN_COOLDOWN_HOURS)
 
         print(f"[{now.strftime('%H:%M')}] Fetching deals...")
@@ -165,57 +162,67 @@ async def post_deals_to_channel(bot: Bot, force: bool = False):
             if not asin:
                 continue
 
-            # تخطي لو اتنشر في آخر 48 ساعة (من الـ database)
             if await was_deal_posted(asin, ASIN_COOLDOWN_HOURS):
-                print(f"Skipping {asin} — already posted in last 48h")
+                print(f"Skipping {asin} — already posted")
                 continue
 
-            try:
-                affiliate_link = deal["affiliate_url"]
+            affiliate_link = deal["affiliate_url"]
+            orig = f"<s>{fp(deal['original_price'])}</s> → " if deal.get("original_price") else ""
+            pct = f"🏷 خصم <b>{deal['discount_pct']}%</b>\n" if deal.get("discount_pct") else ""
+            msg = (
+                f"عرض ميتفوتش 🔥⚡️\n\n"
+                f"🛍 {deal['title']}\n\n"
+                f"{pct}"
+                f"💰 {orig}<b>{fp(deal['price'])}</b>\n\n"
+                f"🛒 <a href='{affiliate_link}'>اشتري دلوقتي</a>"
+            )
 
-                # خد سكرين شوت من صفحة المنتج
+            posted_ok = False
+
+            # 1. حاول بالسكرين شوت
+            try:
                 shot_data = await get_product_screenshot(asin)
                 screenshot = shot_data.get("screenshot") if shot_data else None
+                if screenshot:
+                    await bot.send_photo(
+                        chat_id=CHANNEL_ID, photo=screenshot,
+                        caption=msg, parse_mode="HTML",
+                        reply_markup=channel_buttons(affiliate_link)
+                    )
+                    posted_ok = True
+            except Exception as e1:
+                print(f"Screenshot failed: {e1}")
 
-                orig = f"<s>{fp(deal['original_price'])}</s> → " if deal.get("original_price") else ""
-                pct = f"🏷 خصم <b>{deal['discount_pct']}%</b>\n" if deal.get("discount_pct") else ""
-                msg = (
-                    f"عرض ميتفوتش 🔥⚡️\n\n"
-                    f"🛍 {deal['title']}\n\n"
-                    f"{pct}"
-                    f"💰 {orig}<b>{fp(deal['price'])}</b>\n\n"
-                    f"🛒 <a href='{affiliate_link}'>اشتري دلوقتي</a>"
-                )
-                photo = screenshot or deal.get("image_url")
+            # 2. حاول بصورة المنتج
+            if not posted_ok and deal.get("image_url"):
                 try:
-                    if photo:
-                        await bot.send_photo(chat_id=CHANNEL_ID, photo=photo,
-                                             caption=msg, parse_mode="HTML",
-                                             reply_markup=channel_buttons(affiliate_link))
-                    else:
-                        await bot.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode="HTML",
-                                               reply_markup=channel_buttons(affiliate_link))
-                except Exception as send_err:
-                    # لو فشل النشر بالصورة، جرب بدون صورة
-                    print(f"Photo send failed: {send_err}, trying text only")
-                    try:
-                        await bot.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode="HTML",
-                                               reply_markup=channel_buttons(affiliate_link))
-                    except Exception as txt_err:
-                        # ابعت الخطأ للأدمن
-                        await bot.send_message(
-                            chat_id=ADMIN_ID,
-                            text=f"❌ فشل النشر على القناة:\n\n{txt_err}\n\nCHANNEL_ID: {CHANNEL_ID}"
-                        )
-                        raise
+                    await bot.send_photo(
+                        chat_id=CHANNEL_ID, photo=deal["image_url"],
+                        caption=msg, parse_mode="HTML",
+                        reply_markup=channel_buttons(affiliate_link)
+                    )
+                    posted_ok = True
+                except Exception as e2:
+                    print(f"Image failed: {e2}")
 
-                # سجّله في الـ database ووقف بعد منتج واحد
+            # 3. ابعت نص بس
+            if not posted_ok:
+                try:
+                    await bot.send_message(
+                        chat_id=CHANNEL_ID, text=msg, parse_mode="HTML",
+                        reply_markup=channel_buttons(affiliate_link)
+                    )
+                    posted_ok = True
+                except Exception as e3:
+                    await bot.send_message(
+                        chat_id=ADMIN_ID,
+                        text=f"❌ فشل النشر!\nخطأ: {e3}\nCHANNEL_ID: {CHANNEL_ID}"
+                    )
+
+            if posted_ok:
                 await mark_deal_posted(asin)
                 _last_deal_post = now
-                print(f"Posted 1 deal: {asin}")
+                print(f"✅ Posted: {asin}")
                 return
-            except Exception as e:
-                print(f"Deal post error: {e}")
-                continue
 
         print("No new deals to post.")
