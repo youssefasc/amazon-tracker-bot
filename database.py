@@ -31,6 +31,14 @@ async def init_db():
                 await db.execute(f"ALTER TABLE users ADD COLUMN {col} {definition}")
             except:
                 pass  # Column already exists
+        # Migration for products table
+        for col, definition in [
+            ("last_alerted_price", "REAL"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE products ADD COLUMN {col} {definition}")
+            except:
+                pass
         await db.execute("""
             CREATE TABLE IF NOT EXISTS products (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,6 +53,7 @@ async def init_db():
                 target_percent REAL,
                 is_muted INTEGER DEFAULT 0,
                 last_alert_at TEXT,
+                last_alerted_price REAL,
                 last_checked_at TEXT,
                 added_at TEXT DEFAULT (datetime('now')),
                 FOREIGN KEY (user_id) REFERENCES users(user_id)
@@ -254,11 +263,17 @@ async def update_product_price(product_id: int, new_price: float):
         await db.commit()
 
 
-async def update_product_alert_time(product_id: int):
+async def update_product_alert_time(product_id: int, alerted_price: float = None):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE products SET last_alert_at=datetime('now') WHERE id=?", (product_id,)
-        )
+        if alerted_price is not None:
+            await db.execute(
+                "UPDATE products SET last_alert_at=datetime('now'), last_alerted_price=? WHERE id=?",
+                (alerted_price, product_id)
+            )
+        else:
+            await db.execute(
+                "UPDATE products SET last_alert_at=datetime('now') WHERE id=?", (product_id,)
+            )
         await db.commit()
 
 
