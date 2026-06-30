@@ -6,8 +6,10 @@ from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TelegramError
 from config import BOT_TOKEN, CHANNEL_ID, ALERT_COOLDOWN_MINUTES, AFFILIATE_TAG, CHANNEL_LINK
 from database import (get_all_active_products, update_product_price, update_product_alert_time,
-                      was_deal_posted, mark_deal_posted, cleanup_old_deals)
-from scraper import get_current_price, get_deals_from_amazon, get_product_screenshot
+                      was_deal_posted, mark_deal_posted, cleanup_old_deals,
+                      get_rotation_state, set_rotation_state)
+from scraper import (get_current_price, get_deals_from_amazon, get_product_screenshot,
+                     CATEGORY_ROTATION)
 
 
 def aff_url(asin: str) -> str:
@@ -49,20 +51,28 @@ def fp(price: float) -> str:
 
 def should_alert(product, new_price: float) -> bool:
     old = product["current_price"]
+
+    # لازم السعر ينزل عن السعر الحالي
     if new_price >= old:
         return False
+
+    # لازم السعر الجديد يكون أقل من آخر سعر تم التنبيه عليه (يمنع تكرار نفس السعر)
+    try:
+        last_alerted = product["last_alerted_price"]
+    except (KeyError, IndexError):
+        last_alerted = None
+    if last_alerted is not None and new_price >= last_alerted:
+        return False
+
+    # شرط السعر المستهدف
     if product["target_price"] and new_price > product["target_price"]:
         return False
+
+    # شرط نسبة الخصم
     if product["target_percent"]:
         if ((old - new_price) / old * 100) < product["target_percent"]:
             return False
-    if product["last_alert_at"]:
-        try:
-            last = datetime.fromisoformat(product["last_alert_at"])
-            if datetime.now() - last < timedelta(minutes=ALERT_COOLDOWN_MINUTES):
-                return False
-        except:
-            pass
+
     return True
 
 
@@ -117,7 +127,7 @@ async def check_all_prices(bot: Bot):
                                                reply_markup=channel_buttons(affiliate_link))
                 except TelegramError as e:
                     print(f"Channel post error: {e}")
-                await update_product_alert_time(product["id"])
+                await update_product_alert_time(product["id"], new_price)
             await update_product_price(product["id"], new_price)
             await asyncio.sleep(3)
         except Exception as e:
@@ -125,8 +135,21 @@ async def check_all_prices(bot: Bot):
     print("Price check done.")
 
 
-async def post_deals_to_channel(bot: Bot):
-    """Scrape deals and post to channel — one deal per run, DB-backed 48h dedup"""
+def get_current_category(counter: int) -> tuple[str, int]:
+    """Returns (category_name, total_cycle_length) based on rotation counter"""
+    cycle_len = sum(count for _, count in CATEGORY_ROTATION)
+    pos = counter % cycle_len
+    acc = 0
+    for cat, count in CATEGORY_ROTATION:
+        if pos < acc + count:
+            return cat, cycle_len
+        acc += count
+    return CATEGORY_ROTATION[-1][0], cycle_len
+
+
+async def post_deals_to_channel(bot: Bot, force: bool = False):
+    """Scrape deals and post to channel — one deal per run, DB-backed 48h dedup,
+    rotating categories"""
     global _last_deal_post
 
     # امنع التشغيل المتزامن
@@ -137,16 +160,20 @@ async def post_deals_to_channel(bot: Bot):
     async with _deals_lock:
         now = datetime.now()
 
-        # امنع التشغيل لو آخر نشر كان من أقل من 4 دقايق
-        if _last_deal_post and (now - _last_deal_post) < timedelta(minutes=4):
+        # امنع التشغيل لو آخر نشر كان من أقل من 4 دقايق (إلا لو force)
+        if not force and _last_deal_post and (now - _last_deal_post) < timedelta(minutes=4):
             print(f"Last post was {(now - _last_deal_post).seconds}s ago, skipping")
             return
 
         # نضّف العروض القديمة (أكتر من 48 ساعة)
         await cleanup_old_deals(ASIN_COOLDOWN_HOURS)
 
-        print(f"[{now.strftime('%H:%M')}] Fetching deals...")
-        deals = await get_deals_from_amazon()
+        # حدد الفئة الحالية من العداد
+        counter = await get_rotation_state()
+        category, cycle_len = get_current_category(counter)
+        print(f"[{now.strftime('%H:%M')}] Fetching deals... category={category} (counter={counter})")
+
+        deals = await get_deals_from_amazon(category)
         if not deals:
             print("No deals found")
             return
@@ -172,8 +199,16 @@ async def post_deals_to_channel(bot: Bot):
                     f"💰 {orig}<b>{fp(deal['price'])}</b>\n\n"
                     f"🛒 <a href='{affiliate_link}'>اشتري دلوقتي</a>"
                 )
-                # خد سكرين شوت من صفحة المنتج
-                screenshot = await get_product_screenshot(asin)
+                # خد سكرين شوت من صفحة المنتج (بحد أقصى 40 ثانية)
+                screenshot = None
+                try:
+                    screenshot = await asyncio.wait_for(
+                        get_product_screenshot(asin), timeout=40
+                    )
+                except asyncio.TimeoutError:
+                    print(f"Screenshot timeout for {asin}")
+                except Exception as e:
+                    print(f"Screenshot error: {e}")
                 photo = screenshot or deal.get("image_url")
                 if photo:
                     await bot.send_photo(chat_id=CHANNEL_ID, photo=photo,
@@ -183,13 +218,15 @@ async def post_deals_to_channel(bot: Bot):
                     await bot.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode="HTML",
                                            reply_markup=channel_buttons(affiliate_link))
 
-                # سجّله في الـ database ووقف بعد منتج واحد
+                # سجّله في الـ database، زوّد العداد، ووقف بعد منتج واحد
                 await mark_deal_posted(asin)
+                await set_rotation_state((counter + 1) % cycle_len)
                 _last_deal_post = now
-                print(f"Posted 1 deal: {asin}")
+                print(f"Posted 1 deal: {asin} (category={category})")
                 return
             except Exception as e:
                 print(f"Deal post error: {e}")
                 continue
 
         print("No new deals to post.")
+
