@@ -39,7 +39,7 @@ def main_menu_keyboard():
         [InlineKeyboardButton("🔍 بحث عن منتج أمازون", callback_data="menu_search"),
          InlineKeyboardButton("📊 إحصائياتي", callback_data="menu_stats")],
         [InlineKeyboardButton("👤 حسابي", callback_data="menu_account"),
-         InlineKeyboardButton("💎 الباقات", callback_data="menu_plans")],
+         InlineKeyboardButton("💎 الاشتراك", callback_data="menu_plans")],
         [InlineKeyboardButton("🎁 شارك واربح", callback_data="menu_share"),
          InlineKeyboardButton("🎫 استخدام كوبون", callback_data="menu_coupon")],
         [InlineKeyboardButton("📢 قناة العروض", url=CHANNEL_LINK),
@@ -185,7 +185,7 @@ async def add_track_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text = (f"⚠️ وصلت للحد الأقصى ({limit} منتجات)\n\nترقّى للخطة المدفوعة! 👑"
                 if not prem else "⚠️ وصلت للحد الأقصى!")
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💎 الباقات", callback_data="menu_plans")],
+            [InlineKeyboardButton("💎 الاشتراك", callback_data="menu_plans")],
             [back_btn()],
         ])
         await update.effective_message.reply_text(text, reply_markup=keyboard)
@@ -209,7 +209,7 @@ async def receive_link(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     product = await scrape_amazon_product(url)
     if not product:
         await msg.edit_text(
-            "❌ مقدرتش أقرأ المنتج.\n\nجرب رابط من amazon.eg مباشرة",
+            "❌ مقدرتش أقرأ المنتج.\n\nجرب رابط من amazon.eg او ابعت الرابط مرة تانية",
             reply_markup=InlineKeyboardMarkup([[back_btn()]])
         )
         return ConversationHandler.END
@@ -445,11 +445,11 @@ async def show_plans(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     limit = await get_user_limit(user_id)
     current = "👑 مدفوعة ♾️" if prem else f"🆓 مجانية ({count}/{limit})"
     text = (
-        f"💎 <b>الباقات</b>\n\n"
+        f"💎 <b>الاشتراك</b>\n\n"
         f"خطتك الحالية: <b>{current}</b>\n\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🆓 <b>مجانية</b> — {FREE_LIMIT} منتجات\n\n"
-        f"👑 <b>مدفوعة — 120 جنيه/شهر</b>\n"
+        f"👑 <b>مدفوعة — 150 جنيه/شهر</b>\n"
         f"• منتجات غير محدودة ♾️\n"
         f"• أولوية في الفحص\n\n"
         f"ادفع عبر InstaPay ثم ابعت سكرين شوت 👇"
