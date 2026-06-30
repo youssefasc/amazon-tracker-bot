@@ -39,7 +39,7 @@ def main_menu_keyboard():
         [InlineKeyboardButton("🔍 بحث عن منتج أمازون", callback_data="menu_search"),
          InlineKeyboardButton("📊 إحصائياتي", callback_data="menu_stats")],
         [InlineKeyboardButton("👤 حسابي", callback_data="menu_account"),
-         InlineKeyboardButton("💎 الاشتراك", callback_data="menu_plans")],
+         InlineKeyboardButton("💎 الباقات", callback_data="menu_plans")],
         [InlineKeyboardButton("🎁 شارك واربح", callback_data="menu_share"),
          InlineKeyboardButton("🎫 استخدام كوبون", callback_data="menu_coupon")],
         [InlineKeyboardButton("📢 قناة العروض", url=CHANNEL_LINK),
@@ -185,7 +185,7 @@ async def add_track_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text = (f"⚠️ وصلت للحد الأقصى ({limit} منتجات)\n\nترقّى للخطة المدفوعة! 👑"
                 if not prem else "⚠️ وصلت للحد الأقصى!")
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💎 الاشتراك", callback_data="menu_plans")],
+            [InlineKeyboardButton("💎 الباقات", callback_data="menu_plans")],
             [back_btn()],
         ])
         await update.effective_message.reply_text(text, reply_markup=keyboard)
@@ -209,7 +209,7 @@ async def receive_link(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     product = await scrape_amazon_product(url)
     if not product:
         await msg.edit_text(
-            "❌ مقدرتش أقرأ المنتج.\n\nجرب رابط من amazon.eg او ابعت الرابط مرة تانية",
+            "❌ مقدرتش أقرأ المنتج.\n\nجرب رابط من amazon.eg مباشرة",
             reply_markup=InlineKeyboardMarkup([[back_btn()]])
         )
         return ConversationHandler.END
@@ -445,11 +445,11 @@ async def show_plans(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     limit = await get_user_limit(user_id)
     current = "👑 مدفوعة ♾️" if prem else f"🆓 مجانية ({count}/{limit})"
     text = (
-        f"💎 <b>الاشتراك</b>\n\n"
+        f"💎 <b>الباقات</b>\n\n"
         f"خطتك الحالية: <b>{current}</b>\n\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🆓 <b>مجانية</b> — {FREE_LIMIT} منتجات\n\n"
-        f"👑 <b>مدفوعة — 150 جنيه/شهر</b>\n"
+        f"👑 <b>مدفوعة — 120 جنيه/شهر</b>\n"
         f"• منتجات غير محدودة ♾️\n"
         f"• أولوية في الفحص\n\n"
         f"ادفع عبر InstaPay ثم ابعت سكرين شوت 👇"
@@ -799,6 +799,7 @@ async def admin_panel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🎫 إنشاء كوبون", callback_data="admin_coupon")],
         [InlineKeyboardButton("⚡ نشر عروض الآن", callback_data="admin_post_deals")],
         [InlineKeyboardButton("🔄 فحص الأسعار الآن", callback_data="admin_check_prices")],
+        [InlineKeyboardButton("🧪 تجربة تنبيه سعر", callback_data="admin_test_alert")],
         [InlineKeyboardButton("👥 المستخدمين", callback_data="admin_users")],
     ])
     await update.effective_message.reply_text(
@@ -863,6 +864,22 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("⏳ بيفحص الأسعار...")
         await check_all_prices(ctx.bot)
         await query.message.reply_text("✅ تم فحص الأسعار!")
+
+    elif data == "admin_test_alert":
+        # ارفع سعر أول منتج بـ 30% عشان يبان إن في انخفاض
+        products = await get_all_active_products()
+        if not products:
+            await query.message.reply_text("❌ مفيش منتجات متابَعة!")
+            return
+        p = products[0]
+        fake_price = p["current_price"] * 1.3
+        await update_product_price(p["id"], fake_price)
+        await query.message.reply_text(
+            f"✅ تم رفع سعر:\n<b>{p['title'][:50]}</b>\n\n"
+            f"من {fp(p['current_price'])} → {fp(fake_price)}\n\n"
+            f"دوس <b>🔄 فحص الأسعار الآن</b>",
+            parse_mode=ParseMode.HTML
+        )
 
     elif data == "admin_users":
         users = await get_all_users()
