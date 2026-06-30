@@ -156,9 +156,13 @@ async def post_deals_to_channel(bot: Bot, force: bool = False):
         if not deals:
             print("No deals found")
             try:
-                await bot.send_message(chat_id=ADMIN_ID, text="⚠️ مفيش عروض اتجابت من أمازون")
-            except:
-                pass
+                from scraper import _last_deals_debug
+                await bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=f"⚠️ مفيش عروض بخصم 30%+\n\nاللي لقيته في كل صفحة:\n{_last_deals_debug or 'مفيش بيانات'}"
+                )
+            except Exception as e:
+                print(f"debug send error: {e}")
             return
 
         for deal in deals:
