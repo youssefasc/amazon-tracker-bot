@@ -234,19 +234,40 @@ async def get_product_screenshot(asin: str) -> bytes | None:
             )
             page = await context.new_page()
             await page.goto(f"https://www.amazon.eg/dp/{asin}", wait_until="domcontentloaded", timeout=30000)
+
+            # Handle bot check — click and wait for redirect to product
             try:
-                btn = await page.query_selector("input[type='submit'], .a-button-input")
+                btn = await page.query_selector("input[type='submit'], button[type='submit'], .a-button-input")
                 if btn:
                     await btn.click()
-                    await asyncio.sleep(3)
+                    # استنى لحد ما المنتج يظهر فعلاً
+                    for _ in range(10):
+                        await asyncio.sleep(1)
+                        title_el = await page.query_selector("#productTitle")
+                        if title_el:
+                            break
             except:
                 pass
+
+            # تأكد إن صفحة المنتج ظهرت (مش صفحة الـ bot check)
             try:
-                await page.wait_for_selector("#productTitle", timeout=8000)
+                await page.wait_for_selector("#productTitle", timeout=10000)
+            except:
+                # لو مفيش productTitle يبقى لسه على صفحة bot check — مينفعش screenshot
+                await browser.close()
+                return None
+
+            await asyncio.sleep(2)  # استنى الصور تحمّل
+
+            # اقفل أي popups
+            try:
+                close_btn = await page.query_selector("[data-action='a-popover-close'], .a-button-close")
+                if close_btn:
+                    await close_btn.click()
+                    await asyncio.sleep(1)
             except:
                 pass
-            await asyncio.sleep(1)
-            # Screenshot of the top part of the page (title + price + image)
+
             screenshot = await page.screenshot(clip={"x": 0, "y": 0, "width": 1280, "height": 700})
             await browser.close()
             return screenshot
