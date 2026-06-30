@@ -866,7 +866,7 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     elif data == "admin_post_deals":
         await query.message.reply_text("⏳ بينزل العروض...")
-        await post_deals_to_channel(ctx.bot)
+        await post_deals_to_channel(ctx.bot, force=True)
         await query.message.reply_text("✅ تم!")
 
     elif data == "admin_check_prices":
@@ -875,7 +875,7 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("✅ تم فحص الأسعار!")
 
     elif data == "admin_test_alert":
-        # ارفع سعر أول منتج بـ 30% عشان يبان إن في انخفاض
+        # ارفع سعر أول منتج بـ 30% وصفّر آخر سعر تم التنبيه عليه
         products = await get_all_active_products()
         if not products:
             await query.message.reply_text("❌ مفيش منتجات متابَعة!")
@@ -883,6 +883,7 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         p = products[0]
         fake_price = p["current_price"] * 1.3
         await update_product_price(p["id"], fake_price)
+        await reset_alerted_price(p["id"])
         await query.message.reply_text(
             f"✅ تم رفع سعر:\n<b>{p['title'][:50]}</b>\n\n"
             f"من {fp(p['current_price'])} → {fp(fake_price)}\n\n"
@@ -1167,3 +1168,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
