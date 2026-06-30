@@ -221,6 +221,40 @@ async def search_amazon(query: str) -> list[dict]:
         return []
 
 
+async def get_product_screenshot(asin: str) -> bytes | None:
+    """Take a screenshot of the product page"""
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                locale="ar-EG",
+                viewport={"width": 1280, "height": 1024},
+                extra_http_headers={"Accept-Language": "ar-EG,ar;q=0.9,en;q=0.8"},
+            )
+            page = await context.new_page()
+            await page.goto(f"https://www.amazon.eg/dp/{asin}", wait_until="domcontentloaded", timeout=30000)
+            try:
+                btn = await page.query_selector("input[type='submit'], .a-button-input")
+                if btn:
+                    await btn.click()
+                    await asyncio.sleep(3)
+            except:
+                pass
+            try:
+                await page.wait_for_selector("#productTitle", timeout=8000)
+            except:
+                pass
+            await asyncio.sleep(1)
+            # Screenshot of the top part of the page (title + price + image)
+            screenshot = await page.screenshot(clip={"x": 0, "y": 0, "width": 1280, "height": 700})
+            await browser.close()
+            return screenshot
+    except Exception as e:
+        print(f"Screenshot error: {e}")
+        return None
+
+
 async def get_deals_from_amazon() -> list[dict]:
     """Scrape Amazon Egypt for products with any discount"""
     # كلمات بحث شائعة — بنجيب منها المنتجات اللي عليها خصم
