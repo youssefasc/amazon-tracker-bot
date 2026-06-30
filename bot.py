@@ -865,9 +865,23 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return WAITING_BROADCAST
 
     elif data == "admin_post_deals":
-        await query.message.reply_text("⏳ بينزل العروض...")
-        await post_deals_to_channel(ctx.bot)
-        await query.message.reply_text("✅ تم!")
+        await query.message.reply_text("⏳ بجيب العروض من أمازون...")
+        from scraper import get_deals_from_amazon
+        deals = await get_deals_from_amazon()
+        await query.message.reply_text(
+            f"🔍 لقيت <b>{len(deals)}</b> عرض من أمازون (خصم 30%+)\n\n"
+            + ("\n".join([f"• {d['title'][:40]} — خصم {d.get('discount_pct','?')}%" for d in deals[:5]])
+               if deals else "❌ مفيش عروض بالفلتر الحالي"),
+            parse_mode=ParseMode.HTML
+        )
+        if deals:
+            await post_deals_to_channel(ctx.bot, force=True)
+            await query.message.reply_text("✅ تم النشر على القناة!")
+        else:
+            await query.message.reply_text(
+                "⚠️ مفيش منتجات بخصم 30%+ دلوقتي.\n"
+                "ممكن نقلل النسبة لو عايز."
+            )
 
     elif data == "admin_check_prices":
         await query.message.reply_text("⏳ بيفحص الأسعار...")
