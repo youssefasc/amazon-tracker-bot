@@ -155,6 +155,10 @@ async def post_deals_to_channel(bot: Bot, force: bool = False):
         deals = await get_deals_from_amazon()
         if not deals:
             print("No deals found")
+            try:
+                await bot.send_message(chat_id=ADMIN_ID, text="⚠️ مفيش عروض اتجابت من أمازون")
+            except:
+                pass
             return
 
         for deal in deals:
@@ -178,6 +182,7 @@ async def post_deals_to_channel(bot: Bot, force: bool = False):
             )
 
             posted_ok = False
+            err_log = []
 
             # 1. حاول بالسكرين شوت
             try:
@@ -190,7 +195,10 @@ async def post_deals_to_channel(bot: Bot, force: bool = False):
                         reply_markup=channel_buttons(affiliate_link)
                     )
                     posted_ok = True
+                else:
+                    err_log.append("screenshot=None")
             except Exception as e1:
+                err_log.append(f"screenshot_send: {e1}")
                 print(f"Screenshot failed: {e1}")
 
             # 2. حاول بصورة المنتج
@@ -203,6 +211,7 @@ async def post_deals_to_channel(bot: Bot, force: bool = False):
                     )
                     posted_ok = True
                 except Exception as e2:
+                    err_log.append(f"image_send: {e2}")
                     print(f"Image failed: {e2}")
 
             # 3. ابعت نص بس
@@ -214,15 +223,22 @@ async def post_deals_to_channel(bot: Bot, force: bool = False):
                     )
                     posted_ok = True
                 except Exception as e3:
-                    await bot.send_message(
-                        chat_id=ADMIN_ID,
-                        text=f"❌ فشل النشر!\nخطأ: {e3}\nCHANNEL_ID: {CHANNEL_ID}"
-                    )
+                    err_log.append(f"text_send: {e3}")
 
             if posted_ok:
                 await mark_deal_posted(asin)
                 _last_deal_post = now
                 print(f"✅ Posted: {asin}")
                 return
+            else:
+                # ابعت التشخيص للأدمن
+                try:
+                    await bot.send_message(
+                        chat_id=ADMIN_ID,
+                        text=f"❌ فشل نشر {asin}:\n" + "\n".join(err_log) + f"\n\nCHANNEL_ID: {CHANNEL_ID}"
+                    )
+                except:
+                    pass
+                continue
 
         print("No new deals to post.")
