@@ -6,7 +6,7 @@ from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TelegramError
 from config import BOT_TOKEN, CHANNEL_ID, ALERT_COOLDOWN_MINUTES, AFFILIATE_TAG, CHANNEL_LINK
 from database import get_all_active_products, update_product_price, update_product_alert_time
-from scraper import get_current_price, get_deals_from_amazon
+from scraper import get_current_price, get_deals_from_amazon, get_product_screenshot
 
 
 def aff_url(asin: str) -> str:
@@ -39,6 +39,8 @@ def channel_buttons(affiliate_link: str):
 # ASINs اللي اتنشرت — بتتمسح كل 48 ساعة
 _posted_asins: dict[str, datetime] = {}
 ASIN_COOLDOWN_HOURS = 48
+_deals_lock = asyncio.Lock()
+_last_deal_post: datetime | None = None
 
 
 def fp(price: float) -> str:
@@ -124,56 +126,71 @@ async def check_all_prices(bot: Bot):
 
 
 async def post_deals_to_channel(bot: Bot):
-    """Scrape deals and post to channel — skip already posted ASINs"""
-    global _posted_asins
-    now = datetime.now()
+    """Scrape deals and post to channel — one deal per run, no duplicates"""
+    global _posted_asins, _last_deal_post
 
-    # Clean up old entries
-    _posted_asins = {
-        asin: t for asin, t in _posted_asins.items()
-        if now - t < timedelta(hours=ASIN_COOLDOWN_HOURS)
-    }
-
-    print(f"[{now.strftime('%H:%M')}] Fetching deals... (posted cache: {len(_posted_asins)})")
-    deals = await get_deals_from_amazon()
-    if not deals:
-        print("No deals found")
+    # امنع التشغيل المتزامن
+    if _deals_lock.locked():
+        print("Deals already running, skipping")
         return
 
-    posted = 0
-    for deal in deals:
-        asin = deal.get("asin", "")
+    async with _deals_lock:
+        now = datetime.now()
 
-        # Skip if already posted in last 24h
-        if asin in _posted_asins:
-            print(f"Skipping {asin} — already posted")
-            continue
+        # امنع التشغيل لو آخر نشر كان من أقل من 4 دقايق (يمنع التكرار)
+        if _last_deal_post and (now - _last_deal_post) < timedelta(minutes=4):
+            print(f"Last post was {(now - _last_deal_post).seconds}s ago, skipping")
+            return
 
-        try:
-            affiliate_link = deal["affiliate_url"]
-            short_link = await shorten_url(affiliate_link)
-            orig = f"<s>{fp(deal['original_price'])}</s> → " if deal.get("original_price") else ""
-            pct = f"🏷 خصم <b>{deal['discount_pct']}%</b>\n" if deal.get("discount_pct") else ""
-            msg = (
-                f"⚡ <b>عرض على أمازون مصر!</b>\n\n"
-                f"🛍 {deal['title']}\n\n"
-                f"{pct}"
-                f"💰 {orig}<b>{fp(deal['price'])}</b>\n\n"
-                f"🛒 <a href='{affiliate_link}'>اشتري دلوقتي</a>"
-            )
-            if deal.get("image_url"):
-                await bot.send_photo(chat_id=CHANNEL_ID, photo=deal["image_url"],
-                                     caption=msg, parse_mode="HTML",
-                                     reply_markup=channel_buttons(affiliate_link))
-            else:
-                await bot.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode="HTML",
-                                       reply_markup=channel_buttons(affiliate_link))
+        # Clean up old entries
+        _posted_asins = {
+            asin: t for asin, t in _posted_asins.items()
+            if now - t < timedelta(hours=ASIN_COOLDOWN_HOURS)
+        }
 
-            # Mark as posted
-            _posted_asins[asin] = now
-            posted += 1
-            await asyncio.sleep(5)
-        except Exception as e:
-            print(f"Deal post error: {e}")
+        print(f"[{now.strftime('%H:%M')}] Fetching deals... (posted cache: {len(_posted_asins)})")
+        deals = await get_deals_from_amazon()
+        if not deals:
+            print("No deals found")
+            return
 
-    print(f"Posted {posted} new deals (skipped {len(deals) - posted}).")
+        for deal in deals:
+            asin = deal.get("asin", "")
+
+            # تخطي لو اتنشر في آخر 48 ساعة
+            if asin in _posted_asins:
+                print(f"Skipping {asin} — already posted")
+                continue
+
+            try:
+                affiliate_link = deal["affiliate_url"]
+                orig = f"<s>{fp(deal['original_price'])}</s> → " if deal.get("original_price") else ""
+                pct = f"🏷 خصم <b>{deal['discount_pct']}%</b>\n" if deal.get("discount_pct") else ""
+                msg = (
+                    f"⚡ <b>عرض على أمازون مصر!</b>\n\n"
+                    f"🛍 {deal['title']}\n\n"
+                    f"{pct}"
+                    f"💰 {orig}<b>{fp(deal['price'])}</b>\n\n"
+                    f"🛒 <a href='{affiliate_link}'>اشتري دلوقتي</a>"
+                )
+                # خد سكرين شوت من صفحة المنتج
+                screenshot = await get_product_screenshot(asin)
+                photo = screenshot or deal.get("image_url")
+                if photo:
+                    await bot.send_photo(chat_id=CHANNEL_ID, photo=photo,
+                                         caption=msg, parse_mode="HTML",
+                                         reply_markup=channel_buttons(affiliate_link))
+                else:
+                    await bot.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode="HTML",
+                                           reply_markup=channel_buttons(affiliate_link))
+
+                # سجّله كمنشور ووقف بعد منتج واحد بس
+                _posted_asins[asin] = now
+                _last_deal_post = now
+                print(f"Posted 1 deal: {asin}")
+                return
+            except Exception as e:
+                print(f"Deal post error: {e}")
+                continue
+
+        print("No new deals to post.")
