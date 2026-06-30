@@ -222,7 +222,7 @@ async def search_amazon(query: str) -> list[dict]:
 
 
 async def get_product_screenshot(asin: str) -> dict | None:
-    """Take a screenshot + check if sold by Amazon. Returns {screenshot, sold_by_amazon}"""
+    """Take a screenshot of the product page. Returns {screenshot}"""
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
@@ -256,28 +256,6 @@ async def get_product_screenshot(asin: str) -> dict | None:
 
             await asyncio.sleep(2)
 
-            # تحقق: هل البيع من أمازون؟
-            sold_by_amazon = False
-            try:
-                # ابحث عن البائع في عدة أماكن
-                seller_selectors = [
-                    "#sellerProfileTriggerId",
-                    "#merchant-info",
-                    "[offer-display-feature-name='desktop-merchant-info']",
-                    "#tabular-buybox",
-                ]
-                page_text = ""
-                for sel in seller_selectors:
-                    el = await page.query_selector(sel)
-                    if el:
-                        page_text += (await el.inner_text()) + " "
-                # كلمات تدل إن البائع أمازون
-                amazon_keywords = ["Amazon", "أمازون", "amazon.eg", "Amazon.eg"]
-                if any(k in page_text for k in amazon_keywords):
-                    sold_by_amazon = True
-            except:
-                pass
-
             # اقفل أي popups
             try:
                 close_btn = await page.query_selector("[data-action='a-popover-close'], .a-button-close")
@@ -289,7 +267,7 @@ async def get_product_screenshot(asin: str) -> dict | None:
 
             screenshot = await page.screenshot(clip={"x": 0, "y": 0, "width": 1280, "height": 700})
             await browser.close()
-            return {"screenshot": screenshot, "sold_by_amazon": sold_by_amazon}
+            return {"screenshot": screenshot}
     except Exception as e:
         print(f"Screenshot error: {e}")
         return None
