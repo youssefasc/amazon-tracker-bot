@@ -1065,11 +1065,18 @@ async def post_init(app: Application):
                       max_instances=1, coalesce=True)
     scheduler.add_job(post_deals_to_channel, "interval",
                       minutes=5, args=[app.bot],
-                      next_run_time=datetime.now() + timedelta(minutes=1),
+                      next_run_time=datetime.now() + timedelta(seconds=30),
                       max_instances=1, coalesce=True, id="deals_job",
                       replace_existing=True)
     scheduler.start()
     print("✅ Scheduler started")
+    try:
+        await app.bot.send_message(
+            chat_id=ADMIN_ID,
+            text="✅ البوت اشتغل والـ scheduler بدأ\nأول عرض هينزل خلال 30 ثانية، وبعدين كل 5 دقايق"
+        )
+    except:
+        pass
 
 
 def main():
