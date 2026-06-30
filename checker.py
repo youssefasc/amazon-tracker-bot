@@ -2,13 +2,18 @@ import asyncio
 from datetime import datetime, timedelta
 from telegram import Bot
 from telegram.error import TelegramError
-from config import BOT_TOKEN, CHANNEL_ID, ALERT_COOLDOWN_MINUTES
+from config import BOT_TOKEN, CHANNEL_ID, ALERT_COOLDOWN_MINUTES, AFFILIATE_TAG
 from database import get_all_active_products, update_product_price, update_product_alert_time
 from scraper import get_current_price, get_deals_from_amazon
 
-# ASINs اللي اتنشرت — بتتمسح كل 24 ساعة
+
+def aff_url(asin: str) -> str:
+    """Always build a correct affiliate URL from ASIN"""
+    return f"https://www.amazon.eg/dp/{asin}?tag={AFFILIATE_TAG}"
+
+# ASINs اللي اتنشرت — بتتمسح كل 48 ساعة
 _posted_asins: dict[str, datetime] = {}
-ASIN_COOLDOWN_HOURS = 24
+ASIN_COOLDOWN_HOURS = 48
 
 
 def fp(price: float) -> str:
@@ -46,14 +51,15 @@ async def check_all_prices(bot: Bot):
             if should_alert(product, new_price):
                 drop = old_price - new_price
                 drop_pct = drop / old_price * 100
-                # Alert user
+                affiliate_link = aff_url(product["asin"])
+                # Alert user (private)
                 user_msg = (
                     f"📉 <b>انخفض السعر!</b>\n\n"
                     f"🛍 {product['title']}\n\n"
                     f"💰 كان: <s>{fp(old_price)}</s>\n"
                     f"✅ بقى: <b>{fp(new_price)}</b>\n"
                     f"📊 خصم: <b>{drop_pct:.1f}% (وفّرت {fp(drop)})</b>\n\n"
-                    f"🔗 <a href='{product['affiliate_url']}'>اشتري دلوقتي</a>"
+                    f"🔗 <a href='{affiliate_link}'>اشتري دلوقتي</a>"
                 )
                 try:
                     if product["image_url"]:
@@ -70,7 +76,7 @@ async def check_all_prices(bot: Bot):
                     f"💰 كان: <s>{fp(old_price)}</s>\n"
                     f"✅ بقى: <b>{fp(new_price)}</b>\n"
                     f"📊 خصم: <b>{drop_pct:.1f}%</b>\n\n"
-                    f"🛒 <a href='{product['affiliate_url']}'>اشتري من أمازون مصر</a>\n\n"
+                    f"🛒 <a href='{affiliate_link}'>اشتري من أمازون مصر</a>\n\n"
                     f"📲 تابع أكتر عروض: @offer_egypt"
                 )
                 try:
