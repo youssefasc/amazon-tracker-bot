@@ -365,8 +365,8 @@ async def get_deals_from_amazon() -> list[dict]:
                                         discount_pct = int(m.group(1))
 
                             # لازم يكون عليه خصم
-                            # لازم الخصم 20% أو أكتر
-                            if not discount_pct or discount_pct < 20:
+                            # لازم الخصم 30% أو أكتر
+                            if not discount_pct or discount_pct < 30:
                                 continue
 
                             img_el = await item.query_selector("img.s-image, img")
