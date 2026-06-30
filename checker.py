@@ -5,7 +5,8 @@ from datetime import datetime, timedelta
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TelegramError
 from config import BOT_TOKEN, CHANNEL_ID, ALERT_COOLDOWN_MINUTES, AFFILIATE_TAG, CHANNEL_LINK
-from database import get_all_active_products, update_product_price, update_product_alert_time
+from database import (get_all_active_products, update_product_price, update_product_alert_time,
+                      was_deal_posted, mark_deal_posted, cleanup_old_deals)
 from scraper import get_current_price, get_deals_from_amazon, get_product_screenshot
 
 
@@ -36,8 +37,7 @@ def channel_buttons(affiliate_link: str):
         [InlineKeyboardButton("📢 عروض متتفوتش", url=CHANNEL_LINK)],
     ])
 
-# ASINs اللي اتنشرت — بتتمسح كل 48 ساعة
-_posted_asins: dict[str, datetime] = {}
+# منع التكرار — مخزّن في الـ database دلوقتي
 ASIN_COOLDOWN_HOURS = 48
 _deals_lock = asyncio.Lock()
 _last_deal_post: datetime | None = None
@@ -126,8 +126,8 @@ async def check_all_prices(bot: Bot):
 
 
 async def post_deals_to_channel(bot: Bot):
-    """Scrape deals and post to channel — one deal per run, no duplicates"""
-    global _posted_asins, _last_deal_post
+    """Scrape deals and post to channel — one deal per run, DB-backed 48h dedup"""
+    global _last_deal_post
 
     # امنع التشغيل المتزامن
     if _deals_lock.locked():
@@ -137,18 +137,15 @@ async def post_deals_to_channel(bot: Bot):
     async with _deals_lock:
         now = datetime.now()
 
-        # امنع التشغيل لو آخر نشر كان من أقل من 4 دقايق (يمنع التكرار)
+        # امنع التشغيل لو آخر نشر كان من أقل من 4 دقايق
         if _last_deal_post and (now - _last_deal_post) < timedelta(minutes=4):
             print(f"Last post was {(now - _last_deal_post).seconds}s ago, skipping")
             return
 
-        # Clean up old entries
-        _posted_asins = {
-            asin: t for asin, t in _posted_asins.items()
-            if now - t < timedelta(hours=ASIN_COOLDOWN_HOURS)
-        }
+        # نضّف العروض القديمة (أكتر من 48 ساعة)
+        await cleanup_old_deals(ASIN_COOLDOWN_HOURS)
 
-        print(f"[{now.strftime('%H:%M')}] Fetching deals... (posted cache: {len(_posted_asins)})")
+        print(f"[{now.strftime('%H:%M')}] Fetching deals...")
         deals = await get_deals_from_amazon()
         if not deals:
             print("No deals found")
@@ -156,10 +153,12 @@ async def post_deals_to_channel(bot: Bot):
 
         for deal in deals:
             asin = deal.get("asin", "")
+            if not asin:
+                continue
 
-            # تخطي لو اتنشر في آخر 48 ساعة
-            if asin in _posted_asins:
-                print(f"Skipping {asin} — already posted")
+            # تخطي لو اتنشر في آخر 48 ساعة (من الـ database)
+            if await was_deal_posted(asin, ASIN_COOLDOWN_HOURS):
+                print(f"Skipping {asin} — already posted in last 48h")
                 continue
 
             try:
@@ -184,8 +183,8 @@ async def post_deals_to_channel(bot: Bot):
                     await bot.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode="HTML",
                                            reply_markup=channel_buttons(affiliate_link))
 
-                # سجّله كمنشور ووقف بعد منتج واحد بس
-                _posted_asins[asin] = now
+                # سجّله في الـ database ووقف بعد منتج واحد
+                await mark_deal_posted(asin)
                 _last_deal_post = now
                 print(f"Posted 1 deal: {asin}")
                 return
