@@ -480,3 +480,14 @@ async def clear_posted_deals() -> int:
         await db.execute("DELETE FROM posted_deals")
         await db.commit()
         return count
+
+
+async def get_posted_asins(hours: int = 48) -> set:
+    """Return set of ASINs posted within the last N hours (to skip before scraping details)"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT asin FROM posted_deals WHERE posted_at >= datetime('now', ?)",
+            (f"-{hours} hours",)
+        ) as cur:
+            rows = await cur.fetchall()
+            return {r[0] for r in rows}
