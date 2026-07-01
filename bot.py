@@ -104,7 +104,7 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ])
         await update.effective_message.reply_text(
             f"👋 أهلاً <b>{user.first_name}</b>!\n\n"
-            "⚠️ لازم تشترك في قناتنا الأول عشان تستخدم البوت:",
+            "⚠️ عشان البوت يشتغل معاك بأفضل اداء لازم تشترك في قناتنا الاول من الزرار ال تحت , وبعد ما تشترك ارجع للبوت ابعت /start:",
             parse_mode=ParseMode.HTML, reply_markup=keyboard
         )
         return
