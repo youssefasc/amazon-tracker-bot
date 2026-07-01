@@ -157,7 +157,8 @@ async def get_current_price(asin: str) -> float | None:
 
 
 async def get_prices_batch(asins: list[str]) -> dict[str, float]:
-    """Check prices for multiple ASINs using ONE browser (saves resources)"""
+    """Check prices for multiple ASINs using ONE browser (saves resources).
+    Reads ONLY the main price container to avoid picking up prices from other products."""
     results = {}
     try:
         async with async_playwright() as p:
@@ -179,27 +180,29 @@ async def get_prices_batch(asins: list[str]) -> dict[str, float]:
                             await asyncio.sleep(2)
                     except:
                         pass
+                    # استنى لحد ما الصفحة الصح تتحمّل (لازم يكون فيها /dp/ والـ ASIN الصح)
+                    loaded = False
                     for _ in range(8):
                         await asyncio.sleep(1)
-                        if "amazon.eg" in page.url and "/dp/" in page.url:
+                        if "amazon.eg" in page.url and asin in page.url:
+                            loaded = True
                             break
-                    price = None
-                    for sel in ["span.priceToPay span.a-price-whole", ".apexPriceToPay span.a-price-whole",
-                                "span.a-price-whole", "#corePrice_feature_div span.a-price-whole",
-                                ".a-price .a-offscreen"]:
-                        try:
-                            el = await page.query_selector(sel)
-                            if el:
-                                raw = (await el.inner_text()).strip()
-                                cleaned = re.sub(r"[^\d.]", "", raw.replace(",", ""))
-                                if cleaned:
-                                    price = float(cleaned)
-                                    break
-                        except:
-                            pass
-                    if price:
+                    if not loaded:
+                        print(f"Batch price {asin}: page didn't load correctly, skipping")
+                        continue
+
+                    # تأكد إن عنوان المنتج موجود (تأكيد إننا في صفحة منتج صح)
+                    title_el = await page.query_selector("#productTitle")
+                    if not title_el:
+                        print(f"Batch price {asin}: no product title, skipping")
+                        continue
+
+                    price = await _read_main_price(page)
+                    if price and price > 0:
                         results[asin] = price
                         print(f"Batch price {asin}: {price}")
+                    else:
+                        print(f"Batch price {asin}: no valid price found, skipping")
                 except Exception as e:
                     print(f"Batch price error {asin}: {e}")
                     continue
@@ -207,6 +210,41 @@ async def get_prices_batch(asins: list[str]) -> dict[str, float]:
     except Exception as e:
         print(f"Batch error: {e}")
     return results
+
+
+async def _read_main_price(page) -> float | None:
+    """Read price ONLY from the main product price container (never from related products)."""
+    # الحاويات الرسمية لسعر المنتج الرئيسي فقط
+    main_containers = [
+        "#corePriceDisplay_desktop_feature_div",
+        "#corePrice_feature_div",
+        "#apex_desktop",
+        "#corePriceDisplay_mobile_feature_div",
+        "#buybox",
+    ]
+    for container_sel in main_containers:
+        try:
+            container = await page.query_selector(container_sel)
+            if not container:
+                continue
+            # جرّب السعر المدفوع (priceToPay) أولاً — ده السعر الحالي الفعلي
+            for sel in ["span.priceToPay span.a-price-whole",
+                        ".a-price:not(.a-text-price) span.a-price-whole",
+                        "span.a-price-whole"]:
+                try:
+                    el = await container.query_selector(sel)
+                    if el:
+                        raw = (await el.inner_text()).strip()
+                        cleaned = re.sub(r"[^\d.]", "", raw.replace(",", ""))
+                        if cleaned:
+                            val = float(cleaned)
+                            if val > 0:
+                                return val
+                except:
+                    pass
+        except:
+            pass
+    return None
 
 
 async def search_amazon(query: str) -> list[dict]:
@@ -335,21 +373,34 @@ CATEGORY_URLS = {
         "https://www.amazon.eg/s?k=mobile+phones&i=electronics",
         "https://www.amazon.eg/s?k=laptop&i=electronics",
         "https://www.amazon.eg/s?k=headphones&i=electronics",
+        "https://www.amazon.eg/s?k=smart+watch&i=electronics",
+        "https://www.amazon.eg/s?k=tablet&i=electronics",
+        "https://www.amazon.eg/s?k=power+bank&i=electronics",
         "https://www.amazon.eg/s?k=electronics",
     ],
     "appliances": [
         "https://www.amazon.eg/s?k=home+appliances",
         "https://www.amazon.eg/s?k=kitchen+appliances",
         "https://www.amazon.eg/s?k=air+conditioner",
+        "https://www.amazon.eg/s?k=refrigerator",
+        "https://www.amazon.eg/s?k=washing+machine",
+        "https://www.amazon.eg/s?k=microwave",
+        "https://www.amazon.eg/s?k=vacuum+cleaner",
     ],
     "fashion": [
         "https://www.amazon.eg/s?k=fashion+clothing",
         "https://www.amazon.eg/s?k=clothes",
         "https://www.amazon.eg/s?k=shoes",
+        "https://www.amazon.eg/s?k=watches",
+        "https://www.amazon.eg/s?k=bags",
+        "https://www.amazon.eg/s?k=perfume",
+        "https://www.amazon.eg/s?k=sunglasses",
     ],
     "grocery": [
         "https://www.amazon.eg/s?k=grocery",
         "https://www.amazon.eg/s?k=snacks",
+        "https://www.amazon.eg/s?k=coffee",
+        "https://www.amazon.eg/s?k=supplements",
     ],
     "general": [
         "https://www.amazon.eg/s?k=deals",
@@ -358,6 +409,18 @@ CATEGORY_URLS = {
         "https://www.amazon.eg/s?k=toys",
         "https://www.amazon.eg/s?k=beauty",
         "https://www.amazon.eg/s?k=sports",
+        "https://www.amazon.eg/s?k=home",
+        "https://www.amazon.eg/s?k=books",
+        "https://www.amazon.eg/s?k=games",
+        "https://www.amazon.eg/s?k=kitchen",
+        "https://www.amazon.eg/s?k=baby",
+        "https://www.amazon.eg/s?k=car+accessories",
+        "https://www.amazon.eg/s?k=tools",
+        "https://www.amazon.eg/s?k=pet+supplies",
+        "https://www.amazon.eg/s?k=office",
+        "https://www.amazon.eg/s?k=garden",
+        "https://www.amazon.eg/s?k=health",
+        "https://www.amazon.eg/s?k=gaming",
     ],
 }
 
@@ -392,6 +455,17 @@ async def get_deals_from_amazon(category: str = None, skip_asins: set = None) ->
         for urls in CATEGORY_URLS.values():
             deal_urls.extend(urls)
         random.shuffle(deal_urls)
+
+    # أضف رقم صفحة عشوائي لكل رابط عشان نوصل لمنتجات أعمق (مش بس الصفحة الأولى)
+    paged_urls = []
+    for u in deal_urls:
+        pg = random.choice([1, 1, 2, 2, 3])  # أغلبية صفحة 1-2 وأحياناً 3
+        sep = "&" if "?" in u else "?"
+        if pg > 1:
+            paged_urls.append(f"{u}{sep}page={pg}")
+        else:
+            paged_urls.append(u)
+    deal_urls = paged_urls
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--no-zygote"])
@@ -456,20 +530,16 @@ async def get_deals_from_amazon(category: str = None, skip_asins: set = None) ->
                             original_price = float(orig_clean) if orig_clean else None
 
                             discount_pct = None
+                            # الخصم لازم يتحسب من السعر المشطوب الحقيقي فقط
                             if original_price and original_price > price:
                                 discount_pct = int((original_price - price) / original_price * 100)
-                            else:
-                                # Look for discount badge
-                                badge = await item.query_selector("span.a-badge-text, [class*='savingPercentage'], [class*='discount']")
-                                if badge:
-                                    txt = (await badge.inner_text()).strip()
-                                    m = re.search(r"(\d+)", txt)
-                                    if m:
-                                        discount_pct = int(m.group(1))
 
-                            # لازم يكون عليه خصم
-                            # لازم الخصم 30% أو أكتر
-                            if not discount_pct or discount_pct < 25:
+                            # لازم يكون عليه خصم بين 25% و 80% (فوق 80% غالباً سعر غلط)
+                            if not discount_pct or discount_pct < 25 or discount_pct > 80:
+                                continue
+
+                            # تأكد إن السعرين منطقيين (مش أرقام غريبة)
+                            if price < 10 or (original_price and original_price < price):
                                 continue
 
                             img_el = await item.query_selector("img.s-image, img")
