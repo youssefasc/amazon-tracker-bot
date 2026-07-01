@@ -802,6 +802,7 @@ async def admin_panel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("⚡ نشر عروض الآن", callback_data="admin_post_deals")],
         [InlineKeyboardButton("🔄 فحص الأسعار الآن", callback_data="admin_check_prices")],
         [InlineKeyboardButton("🔧 تصحيح الأسعار", callback_data="admin_fix_prices")],
+        [InlineKeyboardButton("🗑 مسح تاريخ العروض", callback_data="admin_clear_deals")],
         [InlineKeyboardButton("🧪 تجربة تنبيه سعر", callback_data="admin_test_alert")],
         [InlineKeyboardButton("👥 المستخدمين", callback_data="admin_users")],
     ])
@@ -874,6 +875,31 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("⏳ بيفحص الأسعار...")
         await check_all_prices(ctx.bot)
         await query.message.reply_text("✅ تم فحص الأسعار!")
+
+    elif data == "admin_clear_deals":
+        # امسح تاريخ العروض المنشورة عشان يقدر ينشرها تاني
+        n = await clear_posted_deals()
+        await query.message.reply_text(
+            f"✅ تم مسح تاريخ العروض ({n} عرض)\n\n"
+            f"دلوقتي دوس <b>⚡ نشر عروض الآن</b> والقناة هترجع تشتغل",
+            parse_mode=ParseMode.HTML
+        )
+
+    elif data == "admin_fix_prices":
+        # صحّح الأسعار الحقيقية لكل المنتجات بدون أي تنبيهات
+        await query.message.reply_text("⏳ بيصحّح الأسعار (بدون تنبيهات)...")
+        products = await get_all_active_products()
+        asins = list({p["asin"] for p in products})
+        from scraper import get_prices_batch
+        prices = await get_prices_batch(asins)
+        fixed = 0
+        for p in products:
+            np = prices.get(p["asin"])
+            if np:
+                await update_product_price(p["id"], np)
+                await reset_alerted_price(p["id"])
+                fixed += 1
+        await query.message.reply_text(f"✅ تم تصحيح {fixed} منتج (الأسعار الحقيقية اتحدّثت)")
 
     elif data == "admin_test_alert":
         # ابعت تنبيه تجريبي مباشر بدون ما نلمس السعر المخزّن
