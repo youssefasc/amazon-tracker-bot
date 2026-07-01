@@ -9,8 +9,8 @@ from database import (get_all_active_products, update_product_price, update_prod
                       was_deal_posted, mark_deal_posted, cleanup_old_deals,
                       get_rotation_state, set_rotation_state,
                       get_last_deal_post_time, set_last_deal_post_time)
-from scraper import (get_current_price, get_deals_from_amazon, get_product_screenshot,
-                     CATEGORY_ROTATION)
+from scraper import (get_current_price, get_prices_batch, get_deals_from_amazon,
+                     get_product_screenshot, CATEGORY_ROTATION)
 
 
 def aff_url(asin: str) -> str:
@@ -80,9 +80,17 @@ def should_alert(product, new_price: float) -> bool:
 async def check_all_prices(bot: Bot):
     print(f"[{datetime.now().strftime('%H:%M')}] Checking prices...")
     products = await get_all_active_products()
+    if not products:
+        print("No products to check")
+        return
+
+    # اجمع كل الـ ASINs وافحصهم بمتصفح واحد (بدل متصفح لكل منتج)
+    asins = list({p["asin"] for p in products})
+    prices = await get_prices_batch(asins)
+
     for product in products:
         try:
-            new_price = await get_current_price(product["asin"])
+            new_price = prices.get(product["asin"])
             if new_price is None:
                 continue
             old_price = product["current_price"]
@@ -130,7 +138,6 @@ async def check_all_prices(bot: Bot):
                     print(f"Channel post error: {e}")
                 await update_product_alert_time(product["id"], new_price)
             await update_product_price(product["id"], new_price)
-            await asyncio.sleep(3)
         except Exception as e:
             print(f"Error checking {product.get('id')}: {e}")
     print("Price check done.")
