@@ -76,7 +76,7 @@ async def require_membership(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
             [InlineKeyboardButton("✅ اشتركت، تحقق", callback_data="check_membership")],
         ])
         await update.effective_message.reply_text(
-            "⚠️ <b>لازم تشترك في قناتنا الأول!</b>\n\n"
+            "⚠️ <b>لازم تشترك في قناتنا الاول , اعمل اشتراك وارجع ابعت /start تانى !</b>\n\n"
             "📢 قناة عروض متتفوتش — أحسن عروض أمازون مصر يومياً",
             parse_mode=ParseMode.HTML, reply_markup=keyboard
         )
