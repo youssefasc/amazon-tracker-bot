@@ -371,9 +371,11 @@ CATEGORY_ROTATION = (
 )
 
 
-async def get_deals_from_amazon(category: str = None) -> list[dict]:
+async def get_deals_from_amazon(category: str = None, skip_asins: set = None) -> list[dict]:
     """Scrape Amazon Egypt for discounted products. If category given, search it;
-    otherwise search all categories as fallback."""
+    otherwise search all categories as fallback.
+    skip_asins: ASINs already posted — skipped BEFORE reading their details (saves time)."""
+    skip_asins = skip_asins or set()
     if category and category in CATEGORY_URLS:
         deal_urls = list(CATEGORY_URLS[category])
         random.shuffle(deal_urls)
@@ -429,6 +431,10 @@ async def get_deals_from_amazon(category: str = None) -> list[dict]:
                                     href = await link.get_attribute("href") or ""
                                     asin = extract_asin(href) or ""
                             if not asin or any(d["asin"] == asin for d in deals):
+                                continue
+
+                            # تخطي المنتجات المنشورة في آخر 48 ساعة قبل قراءة أي تفاصيل
+                            if asin in skip_asins:
                                 continue
 
                             title_el = await item.query_selector("h2 span, h2 a span, .a-text-normal")
