@@ -1104,10 +1104,9 @@ async def post_init(app: Application):
     scheduler.add_job(check_all_prices, "interval",
                       minutes=CHECK_INTERVAL_MINUTES, args=[app.bot],
                       max_instances=1, coalesce=True, misfire_grace_time=60)
-    # نشر العروض كل 5 دقايق — coalesce=True يمنع تجميع الـ runs الفائتة
-    # (لو فات أكتر من run، ينفّذ واحد بس مش كله دفعة)
+    # نشر العروض كل 10 دقايق
     scheduler.add_job(post_deals_to_channel, "interval",
-                      minutes=5, args=[app.bot],
+                      minutes=10, args=[app.bot],
                       next_run_time=datetime.now() + timedelta(seconds=45),
                       max_instances=1, coalesce=True, id="deals_job",
                       replace_existing=True, misfire_grace_time=60)
