@@ -60,6 +60,17 @@ def should_alert(product, new_price: float) -> bool:
     if new_price >= old:
         return False
 
+    # حماية ضد الأسعار الوهمية: انخفاض أكبر من 70% غالباً غلط في القراءة
+    drop_pct = (old - new_price) / old * 100
+    if drop_pct > 70:
+        print(f"Skipping suspicious alert: {old} → {new_price} ({drop_pct:.0f}% drop, likely wrong price)")
+        return False
+
+    # حماية إضافية: سعر أقل من 10 جنيه غالباً غلط
+    if new_price < 10:
+        print(f"Skipping suspicious price: {new_price}")
+        return False
+
     # لازم السعر الجديد يكون أقل من آخر سعر تم التنبيه عليه (يمنع تكرار نفس السعر)
     try:
         last_alerted = product["last_alerted_price"]
@@ -178,7 +189,7 @@ async def post_deals_to_channel(bot: Bot, force: bool = False):
             if last_post_str:
                 try:
                     last_post = datetime.fromisoformat(last_post_str)
-                    if (now - last_post) < timedelta(minutes=4, seconds=30):
+                    if (now - last_post) < timedelta(minutes=9):
                         print(f"Last post was {(now - last_post).seconds}s ago, skipping")
                         return
                 except:
