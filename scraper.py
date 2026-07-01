@@ -29,7 +29,7 @@ def extract_asin(url: str) -> str | None:
 async def _open_and_read(url: str) -> dict | None:
     """EXACT same logic as the working /debug command"""
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
+        browser = await p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--no-zygote"])
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             locale="ar-EG",
@@ -156,10 +156,63 @@ async def get_current_price(asin: str) -> float | None:
         return None
 
 
+async def get_prices_batch(asins: list[str]) -> dict[str, float]:
+    """Check prices for multiple ASINs using ONE browser (saves resources)"""
+    results = {}
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--no-zygote"])
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                locale="ar-EG",
+                extra_http_headers={"Accept-Language": "ar-EG,ar;q=0.9,en;q=0.8"},
+            )
+            page = await context.new_page()
+            for asin in asins:
+                try:
+                    await page.goto(f"https://www.amazon.eg/dp/{asin}",
+                                    wait_until="domcontentloaded", timeout=25000)
+                    try:
+                        btn = await page.query_selector("input[type='submit'], button[type='submit'], .a-button-input")
+                        if btn:
+                            await btn.click()
+                            await asyncio.sleep(2)
+                    except:
+                        pass
+                    for _ in range(8):
+                        await asyncio.sleep(1)
+                        if "amazon.eg" in page.url and "/dp/" in page.url:
+                            break
+                    price = None
+                    for sel in ["span.priceToPay span.a-price-whole", ".apexPriceToPay span.a-price-whole",
+                                "span.a-price-whole", "#corePrice_feature_div span.a-price-whole",
+                                ".a-price .a-offscreen"]:
+                        try:
+                            el = await page.query_selector(sel)
+                            if el:
+                                raw = (await el.inner_text()).strip()
+                                cleaned = re.sub(r"[^\d.]", "", raw.replace(",", ""))
+                                if cleaned:
+                                    price = float(cleaned)
+                                    break
+                        except:
+                            pass
+                    if price:
+                        results[asin] = price
+                        print(f"Batch price {asin}: {price}")
+                except Exception as e:
+                    print(f"Batch price error {asin}: {e}")
+                    continue
+            await browser.close()
+    except Exception as e:
+        print(f"Batch error: {e}")
+    return results
+
+
 async def search_amazon(query: str) -> list[dict]:
     try:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
+            browser = await p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--no-zygote"])
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 locale="ar-EG",
@@ -226,7 +279,7 @@ async def get_product_screenshot(asin: str) -> bytes | None:
     """Take a screenshot of the product page"""
     try:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
+            browser = await p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--no-zygote"])
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 locale="ar-EG",
@@ -339,7 +392,7 @@ async def get_deals_from_amazon(category: str = None) -> list[dict]:
         random.shuffle(deal_urls)
     try:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
+            browser = await p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--no-zygote"])
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 locale="ar-EG",
