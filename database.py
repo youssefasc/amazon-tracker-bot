@@ -469,3 +469,14 @@ async def set_last_deal_post_time(iso_time: str):
             "INSERT OR REPLACE INTO bot_meta (key, value) VALUES ('last_deal_post', ?)", (iso_time,)
         )
         await db.commit()
+
+
+async def clear_posted_deals() -> int:
+    """Delete ALL posted deals history so products can be reposted. Returns count deleted."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT COUNT(*) FROM posted_deals") as cur:
+            row = await cur.fetchone()
+            count = row[0] if row else 0
+        await db.execute("DELETE FROM posted_deals")
+        await db.commit()
+        return count
