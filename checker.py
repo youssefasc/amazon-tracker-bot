@@ -43,6 +43,8 @@ def channel_buttons(affiliate_link: str):
 # منع التكرار — مخزّن في الـ database دلوقتي
 ASIN_COOLDOWN_HOURS = 48
 _deals_lock = asyncio.Lock()
+# قفل عالمي مشترك — يمنع فتح أكتر من متصفح Playwright في نفس الوقت (يمنع استنزاف الموارد)
+_browser_lock = asyncio.Lock()
 _last_deal_post: datetime | None = None
 
 
@@ -86,7 +88,8 @@ async def check_all_prices(bot: Bot):
 
     # اجمع كل الـ ASINs وافحصهم بمتصفح واحد (بدل متصفح لكل منتج)
     asins = list({p["asin"] for p in products})
-    prices = await get_prices_batch(asins)
+    async with _browser_lock:
+        prices = await get_prices_batch(asins)
 
     for product in products:
         try:
@@ -188,7 +191,8 @@ async def post_deals_to_channel(bot: Bot, force: bool = False):
         category, cycle_len = get_current_category(counter)
         print(f"[{now.strftime('%H:%M')}] Fetching deals... category={category} (counter={counter})")
 
-        deals = await get_deals_from_amazon(category)
+        async with _browser_lock:
+            deals = await get_deals_from_amazon(category)
         if not deals:
             print("No deals found — advancing counter")
             await set_rotation_state((counter + 1) % cycle_len)
@@ -218,9 +222,10 @@ async def post_deals_to_channel(bot: Bot, force: bool = False):
                 # خد سكرين شوت من صفحة المنتج (بحد أقصى 40 ثانية)
                 screenshot = None
                 try:
-                    screenshot = await asyncio.wait_for(
-                        get_product_screenshot(asin), timeout=40
-                    )
+                    async with _browser_lock:
+                        screenshot = await asyncio.wait_for(
+                            get_product_screenshot(asin), timeout=40
+                        )
                 except asyncio.TimeoutError:
                     print(f"Screenshot timeout for {asin}")
                 except Exception as e:
