@@ -801,6 +801,7 @@ async def admin_panel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📣 برودكاست", callback_data="admin_broadcast")],
         [InlineKeyboardButton("⚡ نشر عروض الآن", callback_data="admin_post_deals")],
         [InlineKeyboardButton("🔄 فحص الأسعار الآن", callback_data="admin_check_prices")],
+        [InlineKeyboardButton("🔧 تصحيح الأسعار", callback_data="admin_fix_prices")],
         [InlineKeyboardButton("🧪 تجربة تنبيه سعر", callback_data="admin_test_alert")],
         [InlineKeyboardButton("👥 المستخدمين", callback_data="admin_users")],
     ])
@@ -1072,7 +1073,7 @@ async def post_init(app: Application):
     scheduler = AsyncIOScheduler()
     # heartbeat كل دقيقة عشان الـ container يفضل صاحي + نتأكد الـ scheduler حي
     scheduler.add_job(heartbeat, "interval", minutes=1, id="heartbeat",
-                      max_instances=1, coalesce=True)
+                      max_instances=1, coalesce=True, misfire_grace_time=30)
     # فحص الأسعار كل 5 دقايق
     scheduler.add_job(check_all_prices, "interval",
                       minutes=CHECK_INTERVAL_MINUTES, args=[app.bot],
