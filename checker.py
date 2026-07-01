@@ -8,7 +8,8 @@ from config import BOT_TOKEN, CHANNEL_ID, ALERT_COOLDOWN_MINUTES, AFFILIATE_TAG,
 from database import (get_all_active_products, update_product_price, update_product_alert_time,
                       was_deal_posted, mark_deal_posted, cleanup_old_deals,
                       get_rotation_state, set_rotation_state,
-                      get_last_deal_post_time, set_last_deal_post_time)
+                      get_last_deal_post_time, set_last_deal_post_time,
+                      get_posted_asins)
 from scraper import (get_current_price, get_prices_batch, get_deals_from_amazon,
                      get_product_screenshot, CATEGORY_ROTATION)
 
@@ -191,8 +192,11 @@ async def post_deals_to_channel(bot: Bot, force: bool = False):
         category, cycle_len = get_current_category(counter)
         print(f"[{now.strftime('%H:%M')}] Fetching deals... category={category} (counter={counter})")
 
+        # هات قايمة المنتجات المنشورة في آخر 48 ساعة عشان نتخطاها قبل ما نفتحها
+        skip_asins = await get_posted_asins(ASIN_COOLDOWN_HOURS)
+
         async with _browser_lock:
-            deals = await get_deals_from_amazon(category)
+            deals = await get_deals_from_amazon(category, skip_asins=skip_asins)
         if not deals:
             print("No deals found — advancing counter")
             await set_rotation_state((counter + 1) % cycle_len)
