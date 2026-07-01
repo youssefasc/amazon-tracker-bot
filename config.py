@@ -8,7 +8,7 @@ FREE_LIMIT = 5
 PREMIUM_PRICE = 150
 INSTAPAY_LINK = "https://ipn.eg/S/tecma/instapay/9QOBx7"
 
-CHECK_INTERVAL_MINUTES = 5
+CHECK_INTERVAL_MINUTES = 10
 ALERT_COOLDOWN_MINUTES = 10
 DEALS_POST_INTERVAL_HOURS = 6  # كل 6 ساعات ينزل عروض — بيتغير من الـ scheduler
 
